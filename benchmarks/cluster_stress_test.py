@@ -18,8 +18,8 @@ from typing import Any, Callable
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from minicode.agent_loop import run_agent_turn
-from minicode.agent_metrics import AgentMetricsCollector
+from minicode.agent.agent_loop import run_agent_turn
+from minicode.agent.agent_metrics import AgentMetricsCollector
 from minicode.tooling import ToolDefinition, ToolRegistry, ToolResult
 from minicode.types import AgentStep, ChatMessage, ModelAdapter
 

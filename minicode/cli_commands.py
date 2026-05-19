@@ -158,7 +158,7 @@ def try_handle_local_command(user_input: str, tools=None, cwd: str | None = None
 
     if user_input == "/state":
         try:
-            from minicode.state import handle_state_command
+            from minicode.runtime.state import handle_state_command
             return handle_state_command()
         except ImportError:
             return "State system not available. Please ensure state.py exists."
@@ -166,7 +166,7 @@ def try_handle_local_command(user_input: str, tools=None, cwd: str | None = None
     if user_input == "/memory":
         # Memory system display
         try:
-            from minicode.memory import MemoryManager
+            from minicode.memory.memory import MemoryManager
             from pathlib import Path
             memory_mgr = MemoryManager(project_root=Path(cwd) if cwd else Path.cwd())
             return memory_mgr.format_stats()
@@ -176,7 +176,7 @@ def try_handle_local_command(user_input: str, tools=None, cwd: str | None = None
     if user_input == "/context":
         # Context usage display
         try:
-            from minicode.context_manager import load_context_state
+            from minicode.memory.context_manager import load_context_state
             ctx_mgr = load_context_state()
             if ctx_mgr:
                 return ctx_mgr.format_context_details()
@@ -205,7 +205,7 @@ def try_handle_local_command(user_input: str, tools=None, cwd: str | None = None
             runtime = load_runtime_config()
         except Exception as error:  # noqa: BLE001
             return f"runtime not configured: {error}"
-        from minicode.model_registry import detect_provider
+        from minicode.model.model_registry import detect_provider
         provider = detect_provider(runtime["model"], runtime)
         auth_methods = []
         if runtime.get("authToken"):
@@ -232,7 +232,7 @@ def try_handle_local_command(user_input: str, tools=None, cwd: str | None = None
     if user_input == "/model":
         try:
             runtime = load_runtime_config()
-            from minicode.model_registry import format_model_status
+            from minicode.model.model_registry import format_model_status
             return format_model_status(runtime["model"], runtime)
         except Exception as error:  # noqa: BLE001
             return f"runtime not configured: {error}"
@@ -240,21 +240,21 @@ def try_handle_local_command(user_input: str, tools=None, cwd: str | None = None
     if user_input.startswith("/model "):
         arg = user_input[len("/model "):].strip()
         if not arg:
-            from minicode.model_registry import format_model_list
+            from minicode.model.model_registry import format_model_list
             return format_model_list()
         # Subcommands
         if arg in ("status", "info"):
             try:
                 runtime = load_runtime_config()
-                from minicode.model_registry import format_model_status
+                from minicode.model.model_registry import format_model_status
                 return format_model_status(runtime["model"], runtime)
             except Exception as error:  # noqa: BLE001
                 return f"runtime not configured: {error}"
         if arg in ("list", "ls"):
-            from minicode.model_registry import format_model_list
+            from minicode.model.model_registry import format_model_list
             return format_model_list()
         # Provider filter: /model anthropic, /model openrouter, etc.
-        from minicode.model_registry import Provider, format_model_list
+        from minicode.model.model_registry import Provider, format_model_list
         for p in Provider:
             if arg.lower() == p.value:
                 return format_model_list(provider=p)
@@ -263,7 +263,7 @@ def try_handle_local_command(user_input: str, tools=None, cwd: str | None = None
         return f"saved model={arg} to {MINI_CODE_SETTINGS_PATH}\nRestart MiniCode for the change to take effect."
 
     if user_input == "/user" or user_input.startswith("/user "):
-        from minicode.user_profile import handle_user_command
+        from minicode.prompt.user_profile import handle_user_command
         args = user_input[len("/user"):].strip()
         return handle_user_command(args)
 

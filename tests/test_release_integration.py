@@ -6,10 +6,10 @@ import sys
 import threading
 from pathlib import Path
 
-from minicode.agent_loop import run_agent_turn
-from minicode.memory import MemoryManager
-from minicode.permissions import PermissionManager
-from minicode.prompt import build_system_prompt
+from minicode.agent.agent_loop import run_agent_turn
+from minicode.memory.memory import MemoryManager
+from minicode.security.permissions import PermissionManager
+from minicode.prompt.prompt import build_system_prompt
 from minicode.tooling import ToolRegistry
 from minicode.tools import create_default_tool_registry
 from minicode.tui.event_flow import _handle_event

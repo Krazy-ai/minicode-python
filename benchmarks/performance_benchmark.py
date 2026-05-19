@@ -25,8 +25,8 @@ from typing import Any
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from minicode.context_manager import estimate_tokens, estimate_message_tokens
-from minicode.cost_tracker import CostTracker
+from minicode.memory.context_manager import estimate_tokens, estimate_message_tokens
+from minicode.runtime.cost_tracker import CostTracker
 from minicode.tools.grep_files import grep_files_tool
 from minicode.tools.list_files import list_files_tool
 from minicode.tools.read_file import read_file_tool
@@ -248,7 +248,7 @@ def benchmark_context_manager() -> list[BenchmarkResult]:
     """Benchmark context management operations."""
     results = []
 
-    from minicode.context_manager import ContextManager
+    from minicode.memory.context_manager import ContextManager
 
     # Create messages for testing
     messages = []
@@ -373,7 +373,7 @@ def profile_key_functions():
     profiler.enable()
 
     # Run some operations
-    from minicode.context_manager import estimate_tokens
+    from minicode.memory.context_manager import estimate_tokens
     large_text = "Hello 你好 " * 10000
     for _ in range(1000):
         estimate_tokens(large_text)

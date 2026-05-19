@@ -18,7 +18,7 @@ import threading
 import time
 from typing import Any, Callable
 
-from minicode.permissions import PermissionManager
+from minicode.security.permissions import PermissionManager
 from minicode.tooling import ToolRegistry
 from minicode.tui.chrome import _cached_terminal_size
 from minicode.tui.input_parser import (

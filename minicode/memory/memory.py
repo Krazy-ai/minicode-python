@@ -1119,7 +1119,7 @@ class MemoryManager:
         Returns formatted MEMORY.md content from all scopes,
         respecting token limits.
         """
-        from minicode.context_manager import estimate_tokens
+        from minicode.memory.context_manager import estimate_tokens
 
         query = (query or "").strip()
         if query:

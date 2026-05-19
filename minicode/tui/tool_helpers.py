@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from minicode.permissions import PermissionManager
+from minicode.security.permissions import PermissionManager
 from minicode.tooling import ToolContext
 from minicode.tui.types import TranscriptEntry
 from minicode.workspace import resolve_tool_path

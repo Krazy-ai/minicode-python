@@ -16,14 +16,14 @@ collect_ignore_glob = [
 @pytest.fixture
 def memory_manager(tmp_path):
     """Create a MemoryManager with temporary paths."""
-    from minicode.memory import MemoryManager
+    from minicode.memory.memory import MemoryManager
     return MemoryManager(project_root=tmp_path)
 
 
 @pytest.fixture
 def memory_with_entries(memory_manager):
     """Create a MemoryManager pre-populated with test entries."""
-    from minicode.memory import MemoryScope
+    from minicode.memory.memory import MemoryScope
     entries = [
         ("project", "architecture", "Uses FastAPI for REST API backend", ["api", "fastapi"]),
         ("project", "code-pattern", "All functions use snake_case naming", ["convention", "naming"]),
@@ -42,7 +42,7 @@ def memory_with_entries(memory_manager):
 def mock_memory_search():
     """Mock search function for testing prompt injection."""
     def mock_search(query, scope=None, limit=20, min_relevance=0.1):
-        from minicode.memory import MemoryEntry, MemoryScope
+        from minicode.memory.memory import MemoryEntry, MemoryScope
         return [
             MemoryEntry(id="test-1", scope=MemoryScope.PROJECT, category="test", content=f"Mock result for: {query}"),
         ]

@@ -40,7 +40,7 @@ class TestStartupAndConfig:
 
     def test_logging_system_initialization(self):
         """Test logging system initializes correctly."""
-        from minicode.logging_config import setup_logging, get_logger
+        from minicode.runtime.logging_config import setup_logging, get_logger
         logger = setup_logging(level="DEBUG", log_to_file=False, log_to_console=False)
         assert logger.name == "minicode"
         assert logger.level == 10  # DEBUG level
@@ -48,9 +48,9 @@ class TestStartupAndConfig:
     def test_core_module_imports(self):
         """Test all core modules import without errors."""
         from minicode.main import main
-        from minicode.logging_config import setup_logging
-        from minicode.context_manager import ContextManager
-        from minicode.memory import MemoryManager
+        from minicode.runtime.logging_config import setup_logging
+        from minicode.memory.context_manager import ContextManager
+        from minicode.memory.memory import MemoryManager
         from minicode.config import validate_config
         # If we get here, all imports succeeded
         assert True
@@ -134,21 +134,21 @@ class TestPermissionSystem:
 
     def test_path_access_within_cwd_allowed(self):
         """Test that path access within cwd is allowed."""
-        from minicode.permissions import PermissionManager
+        from minicode.security.permissions import PermissionManager
         pm = PermissionManager(workspace_root="/test/cwd")
         # Should not raise
         pm.ensure_path_access("/test/cwd/file.txt", "read")
 
     def test_path_access_outside_cwd_denied_without_prompt(self):
         """Test that path access outside cwd is denied when no prompt."""
-        from minicode.permissions import PermissionManager
+        from minicode.security.permissions import PermissionManager
         pm = PermissionManager(workspace_root="/test/cwd")
         with pytest.raises(RuntimeError, match="outside cwd"):
             pm.ensure_path_access("/etc/passwd", "read")
 
     def test_dangerous_command_detection(self):
         """Test that dangerous commands are detected."""
-        from minicode.permissions import _classify_dangerous_command
+        from minicode.security.permissions import _classify_dangerous_command
         # Git dangerous commands
         result = _classify_dangerous_command("git", ["reset", "--hard"])
         assert result is not None
@@ -169,7 +169,7 @@ class TestContextManagement:
 
     def test_token_estimation_ascii(self):
         """Test token estimation for ASCII text."""
-        from minicode.context_manager import estimate_tokens
+        from minicode.memory.context_manager import estimate_tokens
         text = "Hello World " * 100
         tokens = estimate_tokens(text)
         # ~4 chars/token for ASCII
@@ -178,7 +178,7 @@ class TestContextManagement:
 
     def test_token_estimation_chinese(self):
         """Test token estimation for Chinese text."""
-        from minicode.context_manager import estimate_tokens
+        from minicode.memory.context_manager import estimate_tokens
         text = "你好世界" * 100
         tokens = estimate_tokens(text)
         # ~1.5 chars/token for CJK
@@ -187,7 +187,7 @@ class TestContextManagement:
 
     def test_context_manager_stats(self):
         """Test context manager statistics."""
-        from minicode.context_manager import ContextManager
+        from minicode.memory.context_manager import ContextManager
         ctx = ContextManager(model="claude-sonnet-4-20250514")
         ctx.messages = [{"role": "user", "content": "Hello " * 100}]
         stats = ctx.get_stats()
@@ -196,7 +196,7 @@ class TestContextManagement:
 
     def test_context_compaction(self):
         """Test context compaction reduces message count."""
-        from minicode.context_manager import ContextManager
+        from minicode.memory.context_manager import ContextManager
         ctx = ContextManager(model="claude-sonnet-4-20250514", context_window=1000)
         # Add many messages to trigger compaction
         ctx.messages = [{"role": "user", "content": "x" * 50} for _ in range(50)]
@@ -215,12 +215,12 @@ class TestMemorySystem:
     @pytest.fixture
     def memory_mgr(self, tmp_path):
         """Create a temporary memory manager."""
-        from minicode.memory import MemoryManager
+        from minicode.memory.memory import MemoryManager
         return MemoryManager(workspace=str(tmp_path))
 
     def test_add_memory_entry(self, memory_mgr):
         """Test adding a memory entry."""
-        from minicode.memory import MemoryScope
+        from minicode.memory.memory import MemoryScope
         entry = memory_mgr.add_entry(
             scope=MemoryScope.PROJECT,
             category="convention",
@@ -232,7 +232,7 @@ class TestMemorySystem:
 
     def test_search_memory(self, memory_mgr):
         """Test searching memory entries."""
-        from minicode.memory import MemoryScope
+        from minicode.memory.memory import MemoryScope
         memory_mgr.add_entry(MemoryScope.PROJECT, "test", "Python is great for coding")
         memory_mgr.add_entry(MemoryScope.PROJECT, "test", "JavaScript runs in browsers")
         results = memory_mgr.search("Python")
@@ -241,7 +241,7 @@ class TestMemorySystem:
 
     def test_memory_context_injection(self, memory_mgr):
         """Test memory context injection for system prompt."""
-        from minicode.memory import MemoryScope
+        from minicode.memory.memory import MemoryScope
         memory_mgr.add_entry(MemoryScope.PROJECT, "convention", "Always write tests")
         context = memory_mgr.get_relevant_context(max_entries=10, max_tokens=8000)
         assert isinstance(context, str)
@@ -249,7 +249,7 @@ class TestMemorySystem:
 
     def test_memory_persistence(self, memory_mgr):
         """Test memory persists to disk."""
-        from minicode.memory import MemoryManager, MemoryScope
+        from minicode.memory.memory import MemoryManager, MemoryScope
         memory_mgr.add_entry(MemoryScope.PROJECT, "test", "Persistent memory entry")
         # Reload and check
         memory_mgr2 = MemoryManager(workspace=memory_mgr.workspace)
@@ -273,7 +273,7 @@ class TestHelpSystem:
 
     def test_context_details_format(self):
         """Test /context command output format."""
-        from minicode.context_manager import ContextManager
+        from minicode.memory.context_manager import ContextManager
         ctx = ContextManager(model="claude-sonnet-4-20250514")
         result = ctx.format_context_details()
         assert "Context Window Usage" in result
@@ -281,7 +281,7 @@ class TestHelpSystem:
 
     def test_memory_summary_format(self):
         """Test /memory command output format."""
-        from minicode.memory import MemoryManager
+        from minicode.memory.memory import MemoryManager
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             mem = MemoryManager(workspace=tmp)

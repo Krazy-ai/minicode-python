@@ -40,9 +40,14 @@ def test_legacy_root_smoke_scripts_are_not_pytest_collected() -> None:
         for path in ROOT.glob(pattern)
     }
 
-    assert root_smoke_scripts
-    assert root_smoke_scripts.issubset(set(conftest.collect_ignore))
+    # Legacy manual smoke scripts have been moved to archive/legacy-tests/.
+    # The project root must therefore contain no top-level test_*.py files.
+    assert root_smoke_scripts == set(), (
+        f"Unexpected legacy test scripts at repo root: {root_smoke_scripts}. "
+        "Move them to archive/legacy-tests/ or tests/."
+    )
     assert "benchmarks/*.py" in conftest.collect_ignore_glob
+    assert "archive/**/*.py" in conftest.collect_ignore_glob
 
 
 def test_ci_workflow_runs_release_quality_gates() -> None:

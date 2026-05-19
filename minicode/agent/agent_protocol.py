@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable
 
-from minicode.context_isolation import AgentContext, ContextSandbox, get_sandbox
+from minicode.memory.context_isolation import AgentContext, ContextSandbox, get_sandbox
 
 
 # ---------------------------------------------------------------------------

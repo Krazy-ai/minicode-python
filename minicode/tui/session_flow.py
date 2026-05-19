@@ -4,10 +4,10 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from minicode.cost_tracker import CostTracker
+from minicode.runtime.cost_tracker import CostTracker
 from minicode.history import load_history_entries
-from minicode.permissions import PermissionManager
-from minicode.session import (
+from minicode.security.permissions import PermissionManager
+from minicode.memory.session import (
     AutosaveManager,
     SessionData,
     create_new_session,
@@ -18,7 +18,7 @@ from minicode.session import (
     load_session,
     save_session,
 )
-from minicode.state import create_app_store
+from minicode.runtime.state import create_app_store
 from minicode.tui.state import PendingApproval, ScreenState, TtyAppArgs
 from minicode.tui.tool_lifecycle import _bump_transcript_revision
 from minicode.tui.types import TranscriptEntry

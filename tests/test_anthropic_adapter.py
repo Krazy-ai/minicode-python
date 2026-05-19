@@ -1,6 +1,6 @@
 import json
 
-from minicode.anthropic_adapter import AnthropicModelAdapter
+from minicode.model.anthropic_adapter import AnthropicModelAdapter
 from minicode.tooling import ToolDefinition, ToolRegistry
 
 

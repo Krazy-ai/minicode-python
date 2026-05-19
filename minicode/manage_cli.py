@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from minicode.config import get_mcp_config_path, load_scoped_mcp_servers, save_scoped_mcp_servers
-from minicode.skills import discover_skills, install_skill, remove_managed_skill
+from minicode.prompt.skills import discover_skills, install_skill, remove_managed_skill
 
 
 def _print_usage() -> None:

@@ -1,7 +1,7 @@
 """Memory system performance benchmarks."""
 import time
 import pytest
-from minicode.memory import MemoryManager, MemoryScope
+from minicode.memory.memory import MemoryManager, MemoryScope
 
 
 @pytest.mark.benchmark

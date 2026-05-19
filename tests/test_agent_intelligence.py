@@ -9,14 +9,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from minicode.agent_metrics import (
+from minicode.agent.agent_metrics import (
     AgentMetricsCollector,
     AgentTurnMetrics,
     ErrorCategory,
     ToolExecutionRecord,
     ToolHistoricalStats,
 )
-from minicode.agent_intelligence import (
+from minicode.agent.agent_intelligence import (
     ClassifiedError,
     ErrorCategory as AIErrorCategory,
     ErrorClassifier,
@@ -24,8 +24,8 @@ from minicode.agent_intelligence import (
     RecoveryStrategy,
     ToolScheduler,
 )
-from minicode.memory_injector import InjectedMemory, MemoryInjector
-from minicode.memory import MemoryManager, MemoryScope
+from minicode.memory.memory_injector import InjectedMemory, MemoryInjector
+from minicode.memory.memory import MemoryManager, MemoryScope
 from minicode.tooling import ToolCapability, ToolDefinition, ToolMetadata, ToolRegistry
 
 
@@ -449,7 +449,7 @@ class TestAgentLoopIntegration:
 
     def test_metrics_collector_integration(self):
         """Metrics flow through agent loop."""
-        from minicode.agent_loop import run_agent_turn
+        from minicode.agent.agent_loop import run_agent_turn
         from minicode.types import AgentStep
 
         metrics = AgentMetricsCollector()
@@ -480,7 +480,7 @@ class TestAgentLoopIntegration:
 
     def test_error_recovery_integration(self):
         """Error classification in loop."""
-        from minicode.agent_loop import run_agent_turn
+        from minicode.agent.agent_loop import run_agent_turn
         from minicode.types import AgentStep, ToolCall
         from minicode.tooling import ToolResult
 
@@ -529,7 +529,7 @@ class TestAgentLoopIntegration:
 
     def test_scheduler_integration(self):
         """Tool scheduling in loop."""
-        from minicode.agent_loop import run_agent_turn
+        from minicode.agent.agent_loop import run_agent_turn
         from minicode.types import AgentStep, ToolCall
         from minicode.tooling import ToolResult
 

@@ -7,7 +7,7 @@ import subprocess
 import sys
 from typing import Sequence
 
-from minicode.background_tasks import register_background_shell_task
+from minicode.runtime.background_tasks import register_background_shell_task
 from minicode.tooling import ToolDefinition, ToolResult
 from minicode.workspace import resolve_tool_path
 

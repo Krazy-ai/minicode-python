@@ -259,7 +259,7 @@ def validate_provider_runtime(runtime: dict[str, Any]) -> list[str]:
     OpenAI-compatible credentials must be present; likewise for Anthropic,
     OpenRouter, and custom endpoints.
     """
-    from minicode.model_registry import Provider, detect_provider
+    from minicode.model.model_registry import Provider, detect_provider
 
     model = str(runtime.get("model", "")).strip()
     provider = detect_provider(model, runtime)
@@ -416,7 +416,7 @@ def format_config_diagnostic(cwd: str | Path | None = None) -> str:
         lines.append(f"  Model: {model_name}")
 
         # Show provider info
-        from minicode.model_registry import detect_provider, Provider
+        from minicode.model.model_registry import detect_provider, Provider
         provider = detect_provider(model_name, config)
         lines.append(f"  Provider: {provider.value}")
 

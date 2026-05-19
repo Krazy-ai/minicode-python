@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from minicode.context_manager import estimate_tokens
+from minicode.memory.context_manager import estimate_tokens
 from minicode.tui.chrome import (
     render_panel,
     render_banner,

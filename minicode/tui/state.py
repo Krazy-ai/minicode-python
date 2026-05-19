@@ -3,10 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from minicode.cost_tracker import CostTracker
-from minicode.permissions import PermissionManager
-from minicode.session import AutosaveManager, SessionData
-from minicode.state import AppState, Store
+from minicode.runtime.cost_tracker import CostTracker
+from minicode.security.permissions import PermissionManager
+from minicode.memory.session import AutosaveManager, SessionData
+from minicode.runtime.state import AppState, Store
 from minicode.tooling import ToolRegistry
 from minicode.tui.types import TranscriptEntry
 from minicode.types import ChatMessage, ModelAdapter

@@ -17,19 +17,19 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from minicode.memory import (
+from minicode.memory.memory import (
     MemoryEntry,
     MemoryManager,
     MemoryScope,
     inject_memory_into_prompt,
     _tokenize,
 )
-from minicode.agent_loop import run_agent_turn
-from minicode.mock_model import MockModelAdapter
-from minicode.permissions import PermissionManager
+from minicode.agent.agent_loop import run_agent_turn
+from minicode.model.mock_model import MockModelAdapter
+from minicode.security.permissions import PermissionManager
 from minicode.tools import create_default_tool_registry
-from minicode.prompt import build_system_prompt
-from minicode.context_manager import ContextManager
+from minicode.prompt.prompt import build_system_prompt
+from minicode.memory.context_manager import ContextManager
 from minicode.types import AgentStep
 
 

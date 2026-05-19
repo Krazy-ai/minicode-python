@@ -13,9 +13,9 @@ import urllib.error
 import urllib.request
 from typing import Any, Callable
 
-from minicode.api_retry import RETRYABLE_STATUS, calculate_backoff
-from minicode.cost_tracker import calculate_cost
-from minicode.state import Store, AppState, add_cost, record_api_error, update_context_usage
+from minicode.model.api_retry import RETRYABLE_STATUS, calculate_backoff
+from minicode.runtime.cost_tracker import calculate_cost
+from minicode.runtime.state import Store, AppState, add_cost, record_api_error, update_context_usage
 from minicode.types import AgentStep, StepDiagnostics
 
 DEFAULT_MAX_RETRIES = 4
@@ -376,7 +376,7 @@ class OpenAIModelAdapter:
         if store:
             # Estimate if not provided in stream
             if stream_input_tokens == 0:
-                from minicode.context_manager import estimate_messages_tokens
+                from minicode.memory.context_manager import estimate_messages_tokens
                 stream_input_tokens = estimate_messages_tokens(messages)
             if stream_output_tokens == 0:
                 stream_output_tokens = len("".join(text_parts)) // 4

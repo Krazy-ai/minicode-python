@@ -8,8 +8,8 @@ from minicode.tty_app import (
     summarize_tool_output,
 )
 import minicode.tui.input_handler as input_handler_module
-from minicode.context_manager import ContextManager
-from minicode.permissions import PermissionManager
+from minicode.memory.context_manager import ContextManager
+from minicode.security.permissions import PermissionManager
 from minicode.tooling import ToolRegistry
 from minicode.tui.runtime_control import _ThrottledRenderer as RuntimeThrottledRenderer
 from minicode.tui.event_flow import _handle_event

@@ -4,19 +4,19 @@ import concurrent.futures
 import inspect
 from typing import Any, Callable
 
-from minicode.context_manager import ContextManager, estimate_message_tokens
-from minicode.logging_config import get_logger
-from minicode.permissions import PermissionManager
-from minicode.state import Store, AppState, increment_tool_calls, add_cost, record_api_error, update_context_usage, set_busy, set_idle
+from minicode.memory.context_manager import ContextManager, estimate_message_tokens
+from minicode.runtime.logging_config import get_logger
+from minicode.security.permissions import PermissionManager
+from minicode.runtime.state import Store, AppState, increment_tool_calls, add_cost, record_api_error, update_context_usage, set_busy, set_idle
 from minicode.tooling import ToolContext, ToolRegistry, ToolResult
 from minicode.types import AgentStep, ChatMessage, ModelAdapter
 
 # Hooks integration
-from minicode.hooks import HookEvent, fire_hook_sync
+from minicode.runtime.hooks import HookEvent, fire_hook_sync
 
 # Intelligence integration
-from minicode.agent_metrics import AgentMetricsCollector
-from minicode.agent_intelligence import ErrorClassifier, NudgeGenerator, RecoveryStrategy, ToolScheduler
+from minicode.agent.agent_metrics import AgentMetricsCollector
+from minicode.agent.agent_intelligence import ErrorClassifier, NudgeGenerator, RecoveryStrategy, ToolScheduler
 
 logger = get_logger("agent_loop")
 

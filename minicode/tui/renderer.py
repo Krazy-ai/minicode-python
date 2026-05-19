@@ -2,7 +2,7 @@ from __future__ import annotations
 import sys
 import time
 from typing import Any
-from minicode.background_tasks import list_background_tasks
+from minicode.runtime.background_tasks import list_background_tasks
 from minicode.tui.chrome import (
     _cached_terminal_size,
     render_banner,

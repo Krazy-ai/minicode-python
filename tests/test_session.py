@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from minicode.session import (
+from minicode.memory.session import (
     AutosaveManager,
     SessionData,
     SessionMetadata,
@@ -29,8 +29,8 @@ def temp_session_dir(tmp_path):
     """Create a temporary session directory."""
     sessions_dir = tmp_path / "sessions"
     sessions_dir.mkdir()
-    with patch("minicode.session.SESSIONS_DIR", sessions_dir), \
-         patch("minicode.session.MINI_CODE_DIR", tmp_path):
+    with patch("minicode.memory.session.SESSIONS_DIR", sessions_dir), \
+         patch("minicode.memory.session.MINI_CODE_DIR", tmp_path):
         yield sessions_dir
 
 

@@ -8,7 +8,7 @@ import pytest
 
 import minicode.tools.test_runner as test_runner_module
 import minicode.tools.run_command as run_command_module
-from minicode.permissions import PermissionManager
+from minicode.security.permissions import PermissionManager
 from minicode.tools.batch_ops import batch_copy_tool, batch_move_tool
 from minicode.tools.code_nav import find_references_tool, find_symbols_tool, get_ast_info_tool
 from minicode.tools.code_review import code_review_tool

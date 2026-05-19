@@ -1,5 +1,5 @@
-from minicode.agent_loop import run_agent_turn
-from minicode.state import create_app_store
+from minicode.agent.agent_loop import run_agent_turn
+from minicode.runtime.state import create_app_store
 from minicode.tooling import ToolDefinition, ToolRegistry, ToolResult
 from minicode.types import AgentStep, ChatMessage, ModelAdapter, StepDiagnostics
 

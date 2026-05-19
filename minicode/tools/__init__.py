@@ -2,7 +2,7 @@ from dataclasses import asdict
 import os
 
 from minicode.mcp import create_mcp_backed_tools
-from minicode.skills import discover_skills
+from minicode.prompt.skills import discover_skills
 from minicode.tooling import ToolRegistry
 from minicode.tools.ask_user import ask_user_tool
 from minicode.tools.batch_ops import batch_copy_tool, batch_move_tool, batch_delete_tool

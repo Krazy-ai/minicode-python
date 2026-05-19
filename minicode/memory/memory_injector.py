@@ -4,8 +4,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from minicode.memory import MemoryManager, MemoryScope, MemoryEntry
-from minicode.logging_config import get_logger
+from minicode.memory.memory import MemoryManager, MemoryScope, MemoryEntry
+from minicode.runtime.logging_config import get_logger
 
 logger = get_logger("memory_injector")
 

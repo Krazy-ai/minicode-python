@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from minicode.file_review import apply_reviewed_file_change, load_existing_file
+from minicode.security.file_review import apply_reviewed_file_change, load_existing_file
 from minicode.tooling import ToolDefinition, ToolResult
 from minicode.workspace import resolve_tool_path
 

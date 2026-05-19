@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 from typing import Any
-from minicode.memory import MemoryEntry, MemoryManager, MemoryScope
+from minicode.memory.memory import MemoryEntry, MemoryManager, MemoryScope
 
 
 def create_memory_entries(manager: MemoryManager, count: int, scope: MemoryScope = MemoryScope.PROJECT) -> list[MemoryEntry]:

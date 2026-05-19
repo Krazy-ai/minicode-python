@@ -9,11 +9,11 @@ from typing import Any, Callable
 from minicode.tui.input_parser import KeyEvent, ParsedInputEvent, TextEvent, WheelEvent, parse_input_chunk
 from minicode.tui.state import ScreenState, TtyAppArgs
 from minicode.cli_commands import try_handle_local_command, find_matching_slash_commands
-from minicode.agent_loop import run_agent_turn
-from minicode.context_manager import save_context_state
+from minicode.agent.agent_loop import run_agent_turn
+from minicode.memory.context_manager import save_context_state
 from minicode.history import save_history_entries
 from minicode.local_tool_shortcuts import parse_local_tool_shortcut
-from minicode.prompt import build_system_prompt
+from minicode.prompt.prompt import build_system_prompt
 from minicode.tooling import ToolContext
 from minicode.tui.navigation import _scroll_pending_approval_by, _toggle_pending_approval_expand, _move_pending_approval_selection, _scroll_transcript_by, _jump_transcript_to_edge, _history_up, _history_down, _get_visible_commands
 from minicode.tui.chrome import _cached_terminal_size
@@ -342,11 +342,11 @@ def _handle_input(
     state.is_busy = True
     
     # Hook: user input
-    from minicode.hooks import HookEvent, fire_hook_sync
+    from minicode.runtime.hooks import HookEvent, fire_hook_sync
     fire_hook_sync(HookEvent.USER_INPUT, user_input=input_text)
     
     # Prompt injection detection (input layer)
-    from minicode.auto_mode import AutoModeChecker
+    from minicode.security.auto_mode import AutoModeChecker
     is_injection, injection_reason = AutoModeChecker.detect_prompt_injection(input_text)
     if is_injection:
         logger.warning("Potential prompt injection detected: %s", injection_reason)
@@ -358,7 +358,7 @@ def _handle_input(
     
     # Update app state
     if state.app_state:
-        from minicode.state import set_busy
+        from minicode.runtime.state import set_busy
         state.app_state.set_state(set_busy())
     
     rerender()
@@ -398,7 +398,7 @@ def _handle_input(
         # Hook: assistant output
         fire_hook_sync(HookEvent.ASSISTANT_OUTPUT, assistant_output=content[:500])
         # Output safety check (output layer)
-        from minicode.auto_mode import AutoModeChecker
+        from minicode.security.auto_mode import AutoModeChecker
         is_unsafe, unsafe_reason = AutoModeChecker.classify_output_safety(content)
         if is_unsafe:
             logger.warning("Potentially unsafe output detected: %s", unsafe_reason)

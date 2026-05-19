@@ -16,7 +16,7 @@ import time
 import uuid
 from typing import Any
 
-from minicode.agent_loop import run_agent_turn
+from minicode.agent.agent_loop import run_agent_turn
 from minicode.tooling import ToolDefinition, ToolResult
 
 
@@ -92,9 +92,9 @@ def _run(input_data: dict, context) -> ToolResult:
     - A turn limit
     - Result summarized for the parent context
     """
-    from minicode.model_registry import create_model_adapter
-    from minicode.context_manager import ContextManager
-    from minicode.permissions import PermissionManager
+    from minicode.model.model_registry import create_model_adapter
+    from minicode.memory.context_manager import ContextManager
+    from minicode.security.permissions import PermissionManager
     from minicode.tools import create_default_tool_registry
     
     agent_type = input_data["agent_type"]

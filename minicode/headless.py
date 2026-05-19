@@ -30,15 +30,15 @@ def run_headless(prompt: str | None = None) -> str:
     Returns:
         The assistant's response text.
     """
-    from minicode.agent_loop import run_agent_turn
+    from minicode.agent.agent_loop import run_agent_turn
     from minicode.config import load_runtime_config
-    from minicode.memory import MemoryManager
-    from minicode.model_registry import create_model_adapter
-    from minicode.permissions import PermissionManager
-    from minicode.prompt import build_system_prompt
+    from minicode.memory.memory import MemoryManager
+    from minicode.model.model_registry import create_model_adapter
+    from minicode.security.permissions import PermissionManager
+    from minicode.prompt.prompt import build_system_prompt
     from minicode.tools import create_default_tool_registry
     from minicode.tooling import ToolContext
-    from minicode.logging_config import setup_logging, get_logger
+    from minicode.runtime.logging_config import setup_logging, get_logger
 
     setup_logging(level=os.environ.get("MINI_CODE_LOG_LEVEL", "WARNING"))
     logger = get_logger("headless")

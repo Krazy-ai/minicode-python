@@ -5,15 +5,15 @@ import sys
 import os
 from pathlib import Path
 
-from minicode.agent_loop import run_agent_turn
+from minicode.agent.agent_loop import run_agent_turn
 from minicode.cli_commands import find_matching_slash_commands, try_handle_local_command
 from minicode.config import load_runtime_config
 from minicode.history import load_history_entries, save_history_entries
 from minicode.local_tool_shortcuts import parse_local_tool_shortcut
 from minicode.manage_cli import maybe_handle_management_command
-from minicode.model_registry import create_model_adapter, detect_provider, format_model_status, format_model_list
-from minicode.permissions import PermissionManager
-from minicode.prompt import build_system_prompt
+from minicode.model.model_registry import create_model_adapter, detect_provider, format_model_status, format_model_list
+from minicode.security.permissions import PermissionManager
+from minicode.prompt.prompt import build_system_prompt
 from minicode.tools import create_default_tool_registry
 from minicode.tooling import ToolContext
 from minicode.tui.transcript import format_transcript_text
@@ -155,7 +155,7 @@ def main() -> None:
         parser.error(f"unrecognized arguments: {' '.join(remaining_argv)}")
 
     # Initialize logging
-    from minicode.logging_config import setup_logging
+    from minicode.runtime.logging_config import setup_logging
     setup_logging(level=args.log_level)
 
     # Run config validation if requested
@@ -213,8 +213,8 @@ def main() -> None:
     )
     
     # Initialize ContextManager for context window management
-    from minicode.context_manager import ContextManager
-    from minicode.logging_config import get_logger
+    from minicode.memory.context_manager import ContextManager
+    from minicode.runtime.logging_config import get_logger
     logger = get_logger("main")
     context_mgr = None
     if runtime:
@@ -222,12 +222,12 @@ def main() -> None:
         logger.info("Context manager initialized for model: %s", runtime.get("model", "unknown"))
     
     # Initialize MemoryManager for cross-session knowledge retention
-    from minicode.memory import MemoryManager
+    from minicode.memory.memory import MemoryManager
     memory_mgr = MemoryManager(project_root=Path(cwd))
     logger.info("Memory manager initialized")
     
     # Initialize UserProfileManager for user preferences
-    from minicode.user_profile import UserProfileManager
+    from minicode.prompt.user_profile import UserProfileManager
     profile_manager = UserProfileManager(cwd=cwd)
     merged_profile = profile_manager.load_merged()
     logger.info("User profile manager initialized (global=%s, project=%s)",
@@ -235,7 +235,7 @@ def main() -> None:
                 profile_manager.project_path.exists())
     
     # Initialize Store for global state management (inspired by Claude Code's Zustand store)
-    from minicode.state import create_app_store
+    from minicode.runtime.state import create_app_store
     app_store = create_app_store(
         initial={
             "session_id": args.session or "new",
@@ -382,7 +382,7 @@ def main() -> None:
         print("\n\nInterrupted by user. Shutting down gracefully...")
     finally:
         # Graceful shutdown: clean up all resources
-        from minicode.logging_config import get_logger
+        from minicode.runtime.logging_config import get_logger
         logger = get_logger("main")
         logger.info("Shutting down...")
         
