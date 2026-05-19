@@ -52,4 +52,12 @@ Thumbs.db
 
 # MiniCode specific
 .mini-code/
+.mini-code-memory/
+.mini-code-memory-local/
+.mini-code-session-memory/
 minicode_session/
+
+# Other AI tool / IDE artifacts
+.qwen/
+.trae/
+.workbuddy/
