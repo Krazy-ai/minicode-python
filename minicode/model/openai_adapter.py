@@ -1,7 +1,7 @@
-"""OpenAI-compatible API adapter for MiniCode.
+"""MiniCode 的 OpenAI 兼容协议适配器。
 
-Supports GPT-4o, GPT-4-turbo, GPT-4o-mini and any OpenAI-compatible endpoint
-(e.g., Azure OpenAI, local LLMs with OpenAI-compatible API).
+支持 GPT-4o / GPT-4-turbo / GPT-4o-mini，以及任何 OpenAI 兼容的端点
+（例如 Azure OpenAI、本地的 OpenAI 兼容 LLM 等）。
 """
 
 from __future__ import annotations
@@ -23,16 +23,16 @@ OPENAI_MODELS = {"gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o1", "o1-mini", "o3-mi
 
 
 def _is_openai_model(model: str) -> bool:
-    """Check if model name indicates an OpenAI-compatible API."""
+    """判断模型名是否对应 OpenAI 兼容 API。"""
     model_lower = model.lower()
-    # Direct match
+    # 直接匹配
     if model_lower in OPENAI_MODELS:
         return True
-    # Prefix match for versioned models
+    # 带版本号的前缀匹配
     for prefix in ("gpt-4", "gpt-3.5", "o1-", "o3-", "chatgpt-"):
         if model_lower.startswith(prefix):
             return True
-    # Check if explicitly using OpenAI base URL
+    # 显式配置了 OpenAI base url
     base_url = os.environ.get("OPENAI_BASE_URL", os.environ.get("OPENAI_API_BASE", ""))
     if base_url and "openai" in base_url.lower():
         return True
@@ -40,7 +40,7 @@ def _is_openai_model(model: str) -> bool:
 
 
 def _get_openai_base_url(runtime: dict) -> str:
-    """Get OpenAI-compatible base URL."""
+    """读取 OpenAI 兼容协议的 base url。"""
     return (
         os.environ.get("OPENAI_BASE_URL", "")
         or os.environ.get("OPENAI_API_BASE", "")
@@ -50,7 +50,7 @@ def _get_openai_base_url(runtime: dict) -> str:
 
 
 def _get_openai_api_key(runtime: dict) -> str:
-    """Get OpenAI API key."""
+    """读取 OpenAI API key。"""
     return (
         os.environ.get("OPENAI_API_KEY", "")
         or runtime.get("openaiApiKey", "")
@@ -58,9 +58,9 @@ def _get_openai_api_key(runtime: dict) -> str:
 
 
 def _to_openai_messages(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
-    """Convert internal message format to OpenAI Chat Completion format.
-    
-    Returns (system_message, chat_messages)
+    """把内部消息格式转换为 OpenAI Chat Completion 协议。
+
+    返回 ``(system_message, chat_messages)``。
     """
     system_parts: list[str] = []
     converted: list[dict[str, Any]] = []
@@ -85,7 +85,7 @@ def _to_openai_messages(messages: list[dict[str, Any]]) -> tuple[str, list[dict[
             continue
         
         if role == "assistant_tool_call":
-            # OpenAI format: assistant message with tool_calls
+            # OpenAI 协议：assistant 消息携带 tool_calls
             converted.append({
                 "role": "assistant",
                 "content": None,
@@ -113,7 +113,7 @@ def _to_openai_messages(messages: list[dict[str, Any]]) -> tuple[str, list[dict[
 
 
 def _parse_assistant_text(content: str) -> tuple[str, str | None]:
-    """Parse progress/final markers from assistant text."""
+    """从 assistant 文本中解析出 progress / final 等标记。"""
     trimmed = content.strip()
     if not trimmed:
         return "", None
@@ -133,7 +133,7 @@ def _parse_assistant_text(content: str) -> tuple[str, str | None]:
 
 
 class OpenAIModelAdapter:
-    """Model adapter for OpenAI-compatible APIs."""
+    """OpenAI 兼容协议的模型适配器。"""
     
     def __init__(self, runtime: dict[str, Any], tools) -> None:
         self.runtime = runtime
@@ -142,7 +142,7 @@ class OpenAIModelAdapter:
         self._tools_cache_key: int = 0
     
     def _get_serialized_tools(self) -> list[dict[str, Any]]:
-        """Get serialized tool list in OpenAI function format with caching."""
+        """以 OpenAI function 格式获取序列化后的工具列表（带缓存）。"""
         current_tools = self.tools.list()
         current_key = hash(tuple((t.name, t.description) for t in current_tools))
         if self._cached_tools_json is None or current_key != self._tools_cache_key:
@@ -186,19 +186,19 @@ class OpenAIModelAdapter:
         base_url = _get_openai_base_url(self.runtime)
         api_key = _get_openai_api_key(self.runtime)
         
-        # Build headers — support OpenRouter and custom endpoints
+        # 构造请求头 —— 同时兼容 OpenRouter 和自定义端点
         headers = {
             "content-type": "application/json",
             "Authorization": f"Bearer {api_key}",
         }
-        # OpenRouter extra headers (HTTP-Referer, X-Title)
+        # OpenRouter 额外头（HTTP-Referer / X-Title）
         openrouter_headers = self.runtime.get("_openrouter_headers", {})
         headers.update(openrouter_headers)
-        # Custom endpoint extra headers
+        # 自定义端点的额外头
         custom_headers = self.runtime.get("_custom_headers", {})
         headers.update(custom_headers)
 
-        # OpenRouter extra params (transforms, etc.)
+        # OpenRouter 额外参数（如 transforms）
         openrouter_params = self.runtime.get("_openrouter_params", {})
         for k, v in openrouter_params.items():
             if v is not None:
@@ -211,7 +211,7 @@ class OpenAIModelAdapter:
             method="POST",
         )
         
-        # Retry logic
+        # 重试逻辑
         max_retries = 4
         response = None
         for attempt in range(max_retries + 1):
@@ -234,7 +234,7 @@ class OpenAIModelAdapter:
             raise RuntimeError("OpenAI request failed before receiving a response")
         
         if not on_stream_chunk:
-            # Non-streaming response
+            # 非流式响应
             data = json.loads(response.read().decode("utf-8"))
             status = getattr(response, "status", getattr(response, "code", 200))
             
@@ -244,7 +244,7 @@ class OpenAIModelAdapter:
                 error_msg = data.get("error", {}).get("message", f"OpenAI API error: {status}")
                 raise RuntimeError(error_msg)
             
-            # Cost tracking
+            # 成本统计
             if store:
                 usage = data.get("usage", {})
                 input_tokens = usage.get("prompt_tokens", 0)
@@ -258,7 +258,7 @@ class OpenAIModelAdapter:
                     store.set_state(add_cost(cost_usd))
                 store.set_state(update_context_usage(input_tokens + output_tokens))
             
-            # Parse response
+            # 解析响应
             choices = data.get("choices", [])
             if not choices:
                 return AgentStep(type="assistant", content="")
@@ -301,7 +301,7 @@ class OpenAIModelAdapter:
                 )
             return AgentStep(type="assistant", content=parsed_text, kind=kind, diagnostics=diagnostics)
         
-        # Streaming response
+        # 流式响应
         tool_calls = []
         text_parts = []
         active_tool_calls: dict[int, dict] = {}
@@ -323,7 +323,7 @@ class OpenAIModelAdapter:
             
             choices = event.get("choices", [])
             if not choices:
-                # Maybe usage info
+                # 可能是 usage 信息
                 usage = event.get("usage", {})
                 if usage:
                     stream_input_tokens = usage.get("prompt_tokens", 0)
@@ -335,13 +335,13 @@ class OpenAIModelAdapter:
             if finish_reason:
                 stop_reason = finish_reason
             
-            # Text content
+            # 文本内容
             content = delta.get("content", "")
             if content:
                 text_parts.append(content)
                 on_stream_chunk(content)
             
-            # Tool calls (incremental)
+            # 工具调用（增量）
             tc_deltas = delta.get("tool_calls", [])
             for tc_delta in tc_deltas:
                 idx = tc_delta.get("index", 0)
@@ -359,7 +359,7 @@ class OpenAIModelAdapter:
                 if tc_delta.get("id"):
                     active_tool_calls[idx]["id"] = tc_delta["id"]
         
-        # Finalize tool calls
+        # 完成所有工具调用的拼装
         for idx in sorted(active_tool_calls.keys()):
             tc = active_tool_calls[idx]
             try:
@@ -372,9 +372,9 @@ class OpenAIModelAdapter:
                 "input": parsed_input,
             })
         
-        # Streaming cost tracking
+        # 流式响应结束后写入 store 并记录成本
         if store:
-            # Estimate if not provided in stream
+            # 流式响应未必带 usage，必要时本地估算
             if stream_input_tokens == 0:
                 from minicode.memory.context_manager import estimate_messages_tokens
                 stream_input_tokens = estimate_messages_tokens(messages)

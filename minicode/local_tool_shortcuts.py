@@ -1,7 +1,29 @@
+"""本地工具快捷命令的解析。
+
+把用户在 TUI 里输入的斜杠命令（如 ``/grep foo::src/``）翻译成可被工具
+注册表执行的 ``{"toolName": "grep_files", "input": {...}}`` 字典。
+
+这里仅做语法解析，**不**真正执行；执行交给 ``ToolRegistry.execute``。
+约定使用 ``::`` 作为字段分隔符，便于 shell 中输入路径与文本而无需转义。
+"""
 from __future__ import annotations
 
 
 def parse_local_tool_shortcut(user_input: str) -> dict | None:
+    """解析单条快捷命令。
+
+    支持的命令一览：
+        - ``/ls [path]``                                         → list_files
+        - ``/grep <pattern>[::<path>]``                          → grep_files
+        - ``/read <path>``                                       → read_file
+        - ``/write <path>::<content>``                           → write_file
+        - ``/modify <path>::<content>``                          → modify_file
+        - ``/edit <path>::<search>::<replace>``                  → edit_file
+        - ``/patch <path>::<s1>::<r1>::<s2>::<r2>...``           → patch_file
+        - ``/cmd [<cwd>::]<command>``                            → run_command
+
+    解析失败（格式不对或必填字段为空）时返回 ``None``。
+    """
     if user_input.startswith("/ls"):
         directory = user_input.replace("/ls", "", 1).strip()
         return {"toolName": "list_files", "input": {"path": directory} if directory else {}}

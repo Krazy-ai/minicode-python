@@ -1,14 +1,14 @@
-"""Safe execution isolator for risky operations.
+"""高风险操作的隔离执行器。
 
-Inspired by Learn Claude Code best practices:
-- Worktree execution isolation for exploratory/risky operations
-- Risk assessment before execution
-- Automatic cleanup after isolation
+借鉴 Learn Claude Code 的最佳实践：
+- 用 git worktree 隔离探索性/破坏性操作
+- 执行前先做风险评估
+- 隔离结束后自动清理
 
-Provides:
-- RiskAssessor: Evaluates operation risk level
-- IsolationExecutor: Executes commands in isolated worktrees
-- CleanupManager: Manages automatic cleanup of isolated environments
+提供：
+- RiskAssessor：评估操作风险等级
+- IsolationExecutor：在隔离 worktree 中执行命令
+- CleanupManager：自动清理隔离环境
 """
 
 from __future__ import annotations
@@ -28,19 +28,19 @@ from minicode.tooling import ToolResult
 
 
 # ---------------------------------------------------------------------------
-# Risk Assessment
+# 风险评估
 # ---------------------------------------------------------------------------
 
 class RiskLevel(str, Enum):
-    """Operation risk levels."""
-    SAFE = "safe"           # Read-only operations
-    LOW = "low"             # Minor writes (config files)
-    MEDIUM = "medium"       # Source code modifications
-    HIGH = "high"           # Database operations, deployments
-    CRITICAL = "critical"   # Destructive operations (rm -rf, drop table)
+    """操作风险等级。"""
+    SAFE = "safe"           # 只读操作
+    LOW = "low"             # 轻微写入（如配置文件）
+    MEDIUM = "medium"       # 修改源代码
+    HIGH = "high"           # 数据库/部署等
+    CRITICAL = "critical"   # 破坏性操作（rm -rf / drop table 等）
 
 
-# Command risk classification
+# 命令风险分类
 _CRITICAL_COMMANDS = frozenset({
     "rm", "shred", "dd", "mkfs", "fdisk", "format",
     "dropdb", "drop", "truncate",
@@ -58,39 +58,39 @@ _MEDIUM_COMMANDS = frozenset({
 
 
 def assess_command_risk(command: str, args: list[str]) -> RiskLevel:
-    """Assess the risk level of a command execution.
+    """评估一次命令执行的风险等级。
 
-    Args:
-        command: The command to execute
-        args: Command arguments
+    参数：
+        command: 待执行的命令
+        args: 命令参数
 
-    Returns:
-        RiskLevel indicating required isolation
+    返回：
+        建议的隔离级别 RiskLevel。
     """
     cmd_base = command.lower().split("/")[-1]
 
-    # Critical: Destructive operations
+    # critical：破坏性操作
     if cmd_base in _CRITICAL_COMMANDS:
         return RiskLevel.CRITICAL
 
-    # Check for destructive flags
+    # 含破坏性 flag 即视为 critical
     destructive_flags = {"-rf", "-fr", "--force", "--recursive", "--no-preserve-root"}
     if any(flag in args for flag in destructive_flags):
         return RiskLevel.CRITICAL
 
-    # High: System operations
+    # high：系统级操作
     if cmd_base in _HIGH_COMMANDS:
         return RiskLevel.HIGH
 
-    # Medium: Development tools
+    # medium：开发工具
     if cmd_base in _MEDIUM_COMMANDS:
         return RiskLevel.MEDIUM
 
-    # Low: File writes
+    # low：文件写入类
     if cmd_base in {"echo", "cat", "tee", "cp", "mv", "mkdir", "touch"}:
         return RiskLevel.LOW
 
-    # Safe: Read-only operations
+    # safe：纯只读
     safe_commands = {
         "ls", "pwd", "cat", "head", "tail", "wc", "grep", "find",
         "which", "whoami", "date", "echo", "df", "du", "uname",
@@ -98,35 +98,34 @@ def assess_command_risk(command: str, args: list[str]) -> RiskLevel:
     if cmd_base in safe_commands:
         return RiskLevel.SAFE
 
-    # Default to medium for unknown commands
+    # 未知命令默认 medium
     return RiskLevel.MEDIUM
 
 
 # ---------------------------------------------------------------------------
-# Worktree Isolation
+# Worktree 隔离
 # ---------------------------------------------------------------------------
 
 @dataclass
 class IsolationContext:
-    """Context for isolated operation execution."""
+    """隔离执行的上下文。"""
 
     worktree_path: Path
     original_path: Path
     branch_name: str
     created_at: float = field(default_factory=time.time)
     cleanup_on_exit: bool = True
-    max_age_seconds: float = 3600  # 1 hour default
+    max_age_seconds: float = 3600  # 默认 1 小时
 
     def is_expired(self) -> bool:
-        """Check if this isolation context has expired."""
+        """该隔离上下文是否已过期。"""
         return (time.time() - self.created_at) > self.max_age_seconds
 
 
 class WorktreeIsolator:
-    """Manages git worktree isolation for risky operations.
+    """利用 git worktree 隔离高风险操作。
 
-    Creates temporary git worktrees so that exploratory or destructive
-    operations don't affect the main working directory.
+    创建临时 worktree，让探索性/破坏性操作不会影响主工作区。
     """
 
     def __init__(
@@ -145,15 +144,15 @@ class WorktreeIsolator:
         task_id: str | None = None,
         max_age_seconds: float = 3600,
     ) -> IsolationContext:
-        """Create a new isolated worktree from the source repository.
+        """从源仓库创建一个新的隔离 worktree。
 
-        Args:
-            source_path: Path to the source git repository
-            task_id: Unique task identifier (auto-generated if None)
-            max_age_seconds: Maximum age before auto-cleanup
+        参数：
+            source_path: 源 git 仓库路径
+            task_id: 任务唯一标识（None 时自动生成）
+            max_age_seconds: 最大存活时间，超时后自动清理
 
-        Returns:
-            IsolationContext with worktree path and metadata
+        返回：
+            含 worktree 路径与元信息的 IsolationContext。
         """
         task_id = task_id or str(uuid.uuid4())[:8]
         branch_name = f"{self.prefix}_{task_id}"
@@ -199,17 +198,17 @@ class WorktreeIsolator:
         cwd: Path | None = None,
         timeout: int = 300,
     ) -> ToolResult:
-        """Execute a command inside an isolated worktree.
+        """在隔离 worktree 中执行命令。
 
-        Args:
-            task_id: Task ID from create_isolation()
-            command: Command to execute
-            args: Command arguments
-            cwd: Working directory relative to worktree (default: worktree root)
-            timeout: Execution timeout in seconds
+        参数：
+            task_id: 由 ``create_isolation()`` 返回的任务 ID
+            command: 待执行的命令
+            args: 命令参数
+            cwd: 相对于 worktree 的工作目录（默认 worktree 根目录）
+            timeout: 执行超时（秒）
 
-        Returns:
-            ToolResult with command output
+        返回：
+            含命令输出的 ToolResult。
         """
         context = self.active_contexts.get(task_id)
         if not context:
@@ -261,13 +260,13 @@ class WorktreeIsolator:
             )
 
     def cleanup_isolation(self, task_id: str) -> bool:
-        """Clean up an isolated worktree.
+        """清理一个隔离 worktree。
 
-        Args:
-            task_id: Task ID to clean up
+        参数：
+            task_id: 待清理的任务 ID
 
-        Returns:
-            True if cleanup succeeded
+        返回：
+            清理是否成功。
         """
         context = self.active_contexts.pop(task_id, None)
         if not context:
@@ -297,10 +296,10 @@ class WorktreeIsolator:
         return True
 
     def cleanup_expired(self) -> list[str]:
-        """Clean up all expired isolation contexts.
+        """清理所有已过期的隔离上下文。
 
-        Returns:
-            List of cleaned up task IDs
+        返回：
+            被清理的 task_id 列表。
         """
         expired = [
             tid for tid, ctx in self.active_contexts.items()
@@ -311,10 +310,10 @@ class WorktreeIsolator:
         return expired
 
     def cleanup_all(self) -> list[str]:
-        """Clean up all active isolation contexts.
+        """清理所有活跃的隔离上下文。
 
-        Returns:
-            List of cleaned up task IDs
+        返回：
+            被清理的 task_id 列表。
         """
         all_ids = list(self.active_contexts.keys())
         for tid in all_ids:
@@ -322,11 +321,11 @@ class WorktreeIsolator:
         return all_ids
 
     def get_active_count(self) -> int:
-        """Get count of active isolation contexts."""
+        """获取活跃隔离上下文数量。"""
         return len(self.active_contexts)
 
     def get_status(self) -> dict[str, Any]:
-        """Get isolation status information."""
+        """获取隔离状态信息。"""
         return {
             "active_isolations": len(self.active_contexts),
             "base_dir": str(self.base_dir),
@@ -343,14 +342,14 @@ class WorktreeIsolator:
 
 
 # ---------------------------------------------------------------------------
-# Safe Execution Tool
+# 安全执行入口
 # ---------------------------------------------------------------------------
 
 _default_isolator = WorktreeIsolator()
 
 
 def get_isolator() -> WorktreeIsolator:
-    """Get the global worktree isolator."""
+    """获取全局 WorktreeIsolator。"""
     return _default_isolator
 
 
@@ -361,27 +360,27 @@ def execute_safely(
     task_id: str | None = None,
     timeout: int = 300,
 ) -> ToolResult:
-    """Execute a command with automatic risk assessment and isolation.
+    """带自动风险评估和隔离的命令执行入口。
 
-    This is the main entry point for safe command execution. It:
-    1. Assesses command risk level
-    2. Creates isolation for MEDIUM+ risk commands
-    3. Executes command in isolation (if needed)
-    4. Cleans up isolation after execution
+    流程：
+    1. 评估命令风险等级
+    2. medium+ 风险走 worktree 隔离
+    3. 执行命令
+    4. 完成后自动清理
 
-    Args:
-        command: Command to execute
-        args: Command arguments
-        source_path: Source repository path for worktree creation
-        task_id: Optional task ID for tracking
-        timeout: Execution timeout in seconds
+    参数：
+        command: 待执行的命令
+        args: 命令参数
+        source_path: 用于创建 worktree 的源仓库路径
+        task_id: 可选的任务 ID
+        timeout: 执行超时（秒）
 
-    Returns:
-        ToolResult with execution output and risk metadata
+    返回：
+        含执行输出和风险元信息的 ToolResult。
     """
     risk = assess_command_risk(command, args)
 
-    # Safe and low risk commands execute directly
+    # safe / low 风险直接执行
     if risk in (RiskLevel.SAFE, RiskLevel.LOW):
         try:
             result = subprocess.run(
@@ -407,13 +406,13 @@ def execute_safely(
                 output=f"[Risk: {risk.value}] Execution failed: {e}",
             )
 
-    # Medium+ risk commands get isolated
+    # medium+ 风险走隔离执行
     isolator = get_isolator()
     try:
         context = isolator.create_isolation(
             source_path=source_path,
             task_id=task_id,
-            max_age_seconds=600,  # 10 minutes for isolated execution
+            max_age_seconds=600,  # 隔离执行限定 10 分钟
         )
 
         result = isolator.execute_in_isolation(
@@ -423,10 +422,10 @@ def execute_safely(
             timeout=timeout,
         )
 
-        # Cleanup after execution
+        # 执行后清理
         isolator.cleanup_isolation(context.branch_name.split("_")[-1])
 
-        # Prepend risk level to output
+        # 在输出前加上风险等级提示
         if result.ok:
             result.output = f"[Risk: {risk.value}, Isolated] {result.output}"
         else:
@@ -442,14 +441,14 @@ def execute_safely(
 
 
 def format_risk_info(command: str, args: list[str]) -> str:
-    """Format risk assessment information for display.
+    """格式化风险评估信息用于展示。
 
-    Args:
-        command: Command to assess
-        args: Command arguments
+    参数：
+        command: 待评估命令
+        args: 命令参数
 
-    Returns:
-        Human-readable risk assessment string
+    返回：
+        人类可读的风险评估字符串。
     """
     risk = assess_command_risk(command, args)
 

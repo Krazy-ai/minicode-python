@@ -1,3 +1,9 @@
+"""tui 子包：终端用户界面相关模块。
+
+提供 banner / 面板 / 状态栏 / 输入框 / markdown 渲染 / transcript 等
+终端 UI 组件，以及对应的输入事件解析与状态管理。
+"""
+
 from minicode.tui.chrome import (
     get_permission_prompt_max_scroll_offset,
     render_banner,

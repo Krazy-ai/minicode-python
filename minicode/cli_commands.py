@@ -1,3 +1,16 @@
+"""TUI 内部的斜杠命令处理。
+
+提供两类能力：
+    1. 命令元数据（``SLASH_COMMANDS`` 列表）—— 用于自动补全与帮助菜单
+    2. 即时执行（``try_handle_local_command``）—— 不进 agent loop，直接返回
+       一段字符串展示给用户（如 ``/help`` ``/status`` ``/mcp`` 等）
+
+这里只处理 **本地** 命令；与"本地工具快捷调用"（``/grep`` ``/cmd`` 等）
+分别由 ``local_tool_shortcuts.py`` 处理。
+
+注：所有面向用户/LLM 的 ``description`` 字符串保留英文，以便 LLM 在工具
+推理与命令补全展示中保持一致。
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -14,6 +27,7 @@ from minicode.config import (
 
 @dataclass(frozen=True, slots=True)
 class SlashCommand:
+    """单条斜杠命令的元数据：命令名、用法、英文描述（用于补全菜单）。"""
     name: str
     usage: str
     description: str
@@ -54,6 +68,7 @@ SLASH_COMMANDS = [
 
 
 def format_slash_commands() -> str:
+    """生成 ``/help`` 输出的命令大全（带分组与边框，UI 直接展示）。"""
     lines = [
         "╔══════════════════════════════════════════════════════════╗",
         "║  📚 Available Commands                                  ║",
@@ -118,15 +133,28 @@ def format_slash_commands() -> str:
 
 
 def find_matching_slash_commands(user_input: str) -> list[str]:
+    """返回所有以 ``user_input`` 为前缀的命令用法（用于命令前缀过滤）。"""
     return [command.usage for command in SLASH_COMMANDS if command.usage.startswith(user_input)]
 
 
 def complete_slash_command(line: str) -> tuple[list[str], str]:
+    """命令补全：返回 ``(候选用法列表, 当前输入)``。无匹配时回退到全部命令。"""
     hits = [command.usage for command in SLASH_COMMANDS if command.usage.startswith(line)]
     return (hits if hits else [command.usage for command in SLASH_COMMANDS], line)
 
 
 def try_handle_local_command(user_input: str, tools=None, cwd: str | None = None) -> str | None:
+    """尝试把输入当作本地斜杠命令处理。
+
+    Args:
+        user_input: 用户输入的整行（含前导斜杠）
+        tools: ToolRegistry，部分命令（``/skills`` ``/mcp``）需要从中读取信息
+        cwd: 当前工作目录，部分命令（``/memory``）需要
+
+    Returns:
+        命中且执行成功 → 返回字符串结果（直接展示给用户）
+        未命中 → 返回 ``None``（调用方应继续尝试其他处理路径）
+    """
     if user_input in {"/", "/help"}:
         return format_slash_commands()
 
@@ -164,7 +192,7 @@ def try_handle_local_command(user_input: str, tools=None, cwd: str | None = None
             return "State system not available. Please ensure state.py exists."
 
     if user_input == "/memory":
-        # Memory system display
+        # 展示三层记忆系统的统计信息
         try:
             from minicode.memory.memory import MemoryManager
             from pathlib import Path
@@ -174,7 +202,7 @@ def try_handle_local_command(user_input: str, tools=None, cwd: str | None = None
             return f"Error loading memory: {e}"
 
     if user_input == "/context":
-        # Context usage display
+        # 展示 context window 占用情况
         try:
             from minicode.memory.context_manager import load_context_state
             ctx_mgr = load_context_state()
@@ -242,7 +270,7 @@ def try_handle_local_command(user_input: str, tools=None, cwd: str | None = None
         if not arg:
             from minicode.model.model_registry import format_model_list
             return format_model_list()
-        # Subcommands
+        # 子命令
         if arg in ("status", "info"):
             try:
                 runtime = load_runtime_config()
@@ -253,12 +281,12 @@ def try_handle_local_command(user_input: str, tools=None, cwd: str | None = None
         if arg in ("list", "ls"):
             from minicode.model.model_registry import format_model_list
             return format_model_list()
-        # Provider filter: /model anthropic, /model openrouter, etc.
+        # 按 provider 过滤：/model anthropic, /model openrouter ...
         from minicode.model.model_registry import Provider, format_model_list
         for p in Provider:
             if arg.lower() == p.value:
                 return format_model_list(provider=p)
-        # Otherwise: set model name
+        # 否则视为新模型名并保存
         save_mini_code_settings({"model": arg})
         return f"saved model={arg} to {MINI_CODE_SETTINGS_PATH}\nRestart MiniCode for the change to take effect."
 

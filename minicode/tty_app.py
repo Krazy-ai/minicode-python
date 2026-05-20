@@ -1,12 +1,13 @@
-"""MiniCode Python TTY Application.
+"""MiniCode 的 TTY 全屏应用。
 
-This module implements the full-screen terminal user interface for MiniCode,
-including:
-- Real-time transcript rendering with tool output collapsing
-- Interactive permission approval prompts
-- Background agent thread management
-- Keyboard event handling and command routing
-- Session persistence and autosave
+实现完整的终端 UI 主循环，包括：
+    - 实时 transcript 渲染（含工具输出折叠展示）
+    - 交互式权限审批弹窗
+    - 后台 agent 线程管理
+    - 键盘事件解析与命令路由
+    - 会话持久化与自动保存
+
+入口函数 ``run_tty_app`` 由 main.py 在 stdin 是 TTY 时调用。
 """
 
 from __future__ import annotations
@@ -39,15 +40,15 @@ from minicode.tui.session_flow import handle_session_listing, load_or_create_ses
 from minicode.tui.renderer import _render_screen
 from minicode.tui.input_handler import _RawModeContext, _handle_input
 
-# Terminal size — use unified cache from chrome module
+# 终端尺寸 —— 复用 chrome 模块的统一缓存
 # ---------------------------------------------------------------------------
 
-# Alias to the single canonical implementation in chrome.py
+# 给 chrome.py 中规范实现起一个别名
 _get_terminal_size = _cached_terminal_size
 
 
 # ---------------------------------------------------------------------------
-# Main event-driven TTY app
+# 主事件驱动 TTY 应用
 # ---------------------------------------------------------------------------
 
 
@@ -64,11 +65,11 @@ def run_tty_app(
     memory_manager: Any | None = None,
     context_manager: Any | None = None,
 ) -> list[ChatMessage]:
-    """Event-driven full-screen TTY application, ported from the TypeScript version.
-    
+    """事件驱动的全屏 TTY 应用，从 TypeScript 版本移植。
+
     Args:
-        resume_session: Session ID to resume, or "latest" for most recent
-        list_sessions_only: If True, print session list and exit
+        resume_session: 要恢复的 session ID；传 "latest" 表示恢复最近一次
+        list_sessions_only: 若为 True，仅打印会话列表后返回，不进入 UI
     """
 
     if handle_session_listing(cwd, list_sessions_only):
@@ -87,7 +88,7 @@ def run_tty_app(
         context_manager,
     )
 
-    # Throttled renderer: coalesces rapid rerender() calls to reduce flickering
+    # 节流渲染器：合并短时间内多次的 rerender() 请求，降低闪烁与 CPU 占用
     throttled = _ThrottledRenderer(lambda: _render_screen(args, state), min_interval=0.016)
 
     def rerender() -> None:
@@ -97,15 +98,15 @@ def run_tty_app(
 
     input_remainder = ""
     should_exit = False
-    # Autosave throttle: check at most every ~2 seconds, not every 20ms
+    # 自动保存的节流：每 ~2 秒检查一次（而不是每 20ms）
     _autosave_counter = 0
-    _AUTOSAVE_CHECK_INTERVAL = 100  # iterations (~2s at 20ms polling)
+    _AUTOSAVE_CHECK_INTERVAL = 100  # 迭代次数（按 20ms 轮询折算约 2 秒）
 
     enter_tty_runtime()
 
-    # On Unix, listen for SIGWINCH so terminal resizes are picked up
-    # immediately rather than waiting for the 0.5s cache TTL.
-    # signal.signal() can only be called from the main thread.
+    # Unix 上监听 SIGWINCH，使终端尺寸变化能立即反映，
+    # 而不必等到 0.5 秒缓存 TTL 失效。
+    # signal.signal() 只能在主线程调用。
     _prev_sigwinch = install_sigwinch_rerender(throttled)
 
     try:
@@ -113,31 +114,31 @@ def run_tty_app(
 
         with _RawModeContext():
             while not should_exit:
-                # Autosave check (throttled)
+                # 节流式自动保存
                 _autosave_counter += 1
                 if state.autosave and _autosave_counter >= _AUTOSAVE_CHECK_INTERVAL:
                     _autosave_counter = 0
                     state.autosave.save_if_needed()
-                
-                # Check if background agent thread completed
+
+                # 检查后台 agent 线程是否完成
                 agent_result_data = state.agent_result
                 lock = getattr(state, "agent_lock", None)
                 if agent_result_data is not None and lock is not None and agent_result_data.get("done"):
                     with lock:
                         if agent_result_data.get("messages"):
                             args.messages = agent_result_data["messages"]
-                        agent_result_data["done"] = False  # Reset flag
+                        agent_result_data["done"] = False  # 重置标志位
 
-                # Read raw input
+                # 读取原始输入
                 if sys.platform == "win32":
                     import msvcrt
 
                     if not msvcrt.kbhit():
-                        # Flush any deferred renders during idle
+                        # 空闲时把延迟的渲染冲掉
                         throttled.flush()
-                        time.sleep(0.05)  # 从 0.02 增加到 0.05 降低 CPU 使用率
+                        time.sleep(0.05)  # 从 0.02 增加到 0.05 以降低 CPU 使用率
                         continue
-                    # Use _win_read_one_key to translate special keys
+                    # 用 _win_read_one_key 翻译特殊按键
                     chunk = ""
                     while True:
                         ch = _win_read_one_key()
@@ -150,17 +151,16 @@ def run_tty_app(
                     _fd = sys.stdin.fileno()
                     ready, _, _ = select.select([_fd], [], [], 0.05)
                     if not ready:
-                        # Flush any deferred renders during idle
+                        # 空闲时把延迟的渲染冲掉
                         throttled.flush()
                         continue
-                    # Use os.read() to bypass Python's TextIOWrapper/
-                    # BufferedReader which can block on partial UTF-8
-                    # sequences in raw mode.
+                    # 用 os.read() 绕过 Python 的 TextIOWrapper / BufferedReader：
+                    # raw 模式下它们可能因为 UTF-8 序列被截断而阻塞。
                     _raw = os.read(_fd, 4096)
                     if not _raw:
                         should_exit = True
                         continue
-                    # Drain any remaining bytes without blocking
+                    # 非阻塞地把剩余字节都吸干净
                     while True:
                         ready2, _, _ = select.select([_fd], [], [], 0)
                         if not ready2:
@@ -193,55 +193,55 @@ def run_tty_app(
                         # 记录事件处理错误，但不中断主循环
                         logging.debug("Event handling error: %s", e, exc_info=True)
 
-                # Ensure the final state after processing all events is visible
+                # 处理完一批事件后保证最终状态被画出来
                 throttled.flush()
 
     finally:
-        # Restore previous SIGWINCH handler on Unix
+        # Unix 上还原原 SIGWINCH 处理器
         exit_tty_runtime(_prev_sigwinch)
-        
+
         finalize_tty_session(args, state)
 
     return args.messages
 
 
 # ---------------------------------------------------------------------------
-# Public API / backward-compatible exports for tests
+# 公开 API / 兼容旧测试的导出
 # ---------------------------------------------------------------------------
 
 
 def summarize_tool_input(tool_name: str, tool_input: Any) -> str:
-    """Generate a human-readable summary of tool input.
-    
-    Public wrapper around _summarize_tool_input for external callers.
-    
+    """生成工具入参的可读摘要（外部调用方用）。
+
+    本函数是 _summarize_tool_input 的公开包装。
+
     Args:
-        tool_name: Name of the tool being called
-        tool_input: Input dictionary passed to the tool
-        
+        tool_name: 被调用的工具名
+        tool_input: 传给工具的入参字典
+
     Returns:
-        Human-readable summary string for display in transcript
+        可在 transcript 中展示的可读摘要字符串
     """
     return _summarize_tool_input(tool_name, tool_input)
 
 
 def summarize_tool_output(tool_name: str, output: str) -> str:
-    """Summarize tool output for collapsed display.
-    
-    Picks the first meaningful line and truncates to 140 characters.
-    
+    """对工具输出做折叠态摘要。
+
+    取首个有意义的行并截断到 140 字符。
+
     Args:
-        tool_name: Name of the tool (unused but kept for API consistency)
-        output: Full tool output string
-        
+        tool_name: 工具名（当前未用，保留是为了 API 一致性）
+        output: 工具完整输出字符串
+
     Returns:
-        Truncated summary suitable for collapsed tool display
+        适合在折叠态展示的截断摘要
     """
     return _summarize_collapsed_tool_body(output)
 
 
 def _format_history(entries: list[str], limit: int = 20) -> str:
-    """Format recent history entries with 1-based numbers."""
+    """格式化最近的历史条目，编号从 1 开始。"""
     start = max(0, len(entries) - limit)
     return "\n".join(
         f"{start + i + 1}. {entry}" for i, entry in enumerate(entries[start:])
@@ -249,7 +249,7 @@ def _format_history(entries: list[str], limit: int = 20) -> str:
 
 
 def _save_transcript(state_obj: Any, cwd: str, permissions: PermissionManager, output_path: str) -> str:
-    """Save transcript entries to file. Returns the resolved path string."""
+    """把 transcript 条目保存到文件，返回最终落盘的绝对路径。"""
     return _shared_save_transcript(state_obj, cwd, permissions, output_path)
 
 
@@ -259,12 +259,12 @@ def _apply_tool_result_visual_state(
     output: str,
     is_error: bool,
 ) -> None:
-    """Apply tool result visual state to a transcript entry."""
+    """把工具执行结果的视觉状态应用到 transcript 条目上。"""
     _shared_apply_tool_result_visual_state(entry, tool_name, output, is_error)
 
 
 def _mark_unfinished_tools(state_obj: Any) -> int:
-    """Mark running tool entries as errors and clean up state. Returns count of affected entries."""
+    """把仍处于运行中的工具条目标记为 error 并清理状态，返回受影响条目数。"""
     return _shared_mark_unfinished_tools(state_obj)
 
 
@@ -275,7 +275,7 @@ def _handle_feedback_mode_event(
     approval_event: threading.Event,
     approval_result: dict[str, Any],
 ) -> None:
-    """Handle events when in feedback mode (rejection guidance input)."""
+    """处理反馈模式下的事件（用户在拒绝权限时输入说明）。"""
     pending = state.pending_approval
     if not pending:
         return

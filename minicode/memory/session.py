@@ -1,12 +1,12 @@
-"""Session persistence and resume module.
+"""会话持久化与恢复模块。
 
-Provides session data structures, autosave mechanism, and resume capabilities
-to allow MiniCode to save and restore conversation state across restarts.
+提供会话数据结构、自动保存机制以及 resume 能力，
+让 MiniCode 可以在重启之间持久化并恢复对话状态。
 
-Uses incremental delta saves to reduce serialization overhead:
-- Only new/changed messages are appended since last save
-- Full save occurs periodically (every N deltas) for consistency
-- Dirty tracking at field level avoids redundant serialization
+为减少序列化开销，采用增量 delta 保存策略：
+- 自上次保存以来仅追加新增/变更的消息
+- 每 N 次 delta 保存做一次完整保存以保证一致性
+- 字段级 dirty 跟踪避免重复序列化
 """
 
 from __future__ import annotations
@@ -24,37 +24,37 @@ from minicode.config import MINI_CODE_DIR
 
 
 # ---------------------------------------------------------------------------
-# Configuration
+# 配置
 # ---------------------------------------------------------------------------
 
 SESSIONS_DIR = MINI_CODE_DIR / "sessions"
-AUTOSAVE_INTERVAL_SECONDS = 30  # Minimum seconds between autosaves
+AUTOSAVE_INTERVAL_SECONDS = 30  # 两次自动保存之间的最小间隔（秒）
 
-# Incremental save configuration
-DELTA_DIR_NAME = "deltas"        # Subdirectory for delta files
-FULL_SAVE_INTERVAL = 10          # Do a full save every N delta saves
-MAX_DELTA_FILES = 50             # Maximum delta files before forced consolidation
+# 增量保存配置
+DELTA_DIR_NAME = "deltas"        # 存放 delta 文件的子目录
+FULL_SAVE_INTERVAL = 10          # 每 N 次 delta 保存做一次完整保存
+MAX_DELTA_FILES = 50             # delta 文件数上限，超过则强制合并
 
 
 # ---------------------------------------------------------------------------
-# Data structures
+# 数据结构
 # ---------------------------------------------------------------------------
 
 @dataclass
 class SessionMetadata:
-    """Lightweight metadata for session listing."""
+    """用于会话列表展示的轻量元信息。"""
     session_id: str
-    created_at: float  # Unix timestamp
-    updated_at: float  # Unix timestamp
-    first_message: str = ""  # Truncated first user message
-    last_message: str = ""   # Truncated last message
+    created_at: float  # Unix 时间戳
+    updated_at: float  # Unix 时间戳
+    first_message: str = ""  # 截断后的首条 user 消息
+    last_message: str = ""   # 截断后的最末一条消息
     message_count: int = 0
-    workspace: str = ""      # Working directory when session started
+    workspace: str = ""      # 创建会话时的工作目录
 
 
 @dataclass
 class SessionData:
-    """Complete session state that can be persisted and restored."""
+    """完整的会话状态，可被持久化与恢复。"""
     session_id: str
     created_at: float
     updated_at: float
@@ -67,7 +67,7 @@ class SessionData:
     mcp_servers: list[dict[str, Any]] = field(default_factory=list)
     metadata: SessionMetadata = field(default=None)
     
-    # Incremental save tracking
+    # 增量保存跟踪
     _last_saved_msg_count: int = field(default=0, repr=False)
     _last_saved_transcript_count: int = field(default=0, repr=False)
     _delta_save_count: int = field(default=0, repr=False)
@@ -84,19 +84,19 @@ class SessionData:
             )
 
     def update_metadata(self) -> None:
-        """Refresh metadata from current state."""
+        """根据当前状态刷新元信息。"""
         self.updated_at = time.time()
         self.metadata.updated_at = self.updated_at
         self.metadata.message_count = len(self.messages)
 
-        # Extract first user message (truncated)
+        # 抽取首条 user 消息（截断）
         for msg in self.messages:
             if msg.get("role") == "user":
                 content = msg.get("content", "")
                 self.metadata.first_message = content[:100]
                 break
 
-        # Extract last message (truncated)
+        # 抽取最末一条消息（截断）
         for msg in reversed(self.messages):
             if msg.get("role") in ("user", "assistant"):
                 content = msg.get("content", "")
@@ -105,16 +105,16 @@ class SessionData:
     
     @property
     def has_delta(self) -> bool:
-        """Check if there are unsaved changes."""
+        """是否存在尚未保存的修改。"""
         return (
             len(self.messages) != self._last_saved_msg_count
             or len(self.transcript_entries) != self._last_saved_transcript_count
         )
     
     def _compute_content_hash(self) -> str:
-        """Compute a quick hash of message content for change detection."""
+        """对消息内容做快速哈希，用于检测变化。"""
         h = hashlib.md5(usedforsecurity=False)
-        for msg in self.messages[-20:]:  # Hash last 20 messages for speed
+        for msg in self.messages[-20:]:  # 仅哈希最近 20 条以提速
             h.update(msg.get("role", "").encode())
             content = msg.get("content", "")
             if isinstance(content, str):
@@ -123,26 +123,26 @@ class SessionData:
 
 
 # ---------------------------------------------------------------------------
-# Session file operations
+# 会话文件操作
 # ---------------------------------------------------------------------------
 
 def _session_file(session_id: str) -> Path:
-    """Return path to a session JSON file."""
+    """返回会话主 JSON 文件路径。"""
     return SESSIONS_DIR / f"{session_id}.json"
 
 
 def _session_delta_dir(session_id: str) -> Path:
-    """Return path to a session's delta directory."""
+    """返回会话 delta 目录路径。"""
     return SESSIONS_DIR / DELTA_DIR_NAME / session_id
 
 
 def _session_index_file() -> Path:
-    """Return path to the session index file."""
+    """返回会话索引文件路径。"""
     return MINI_CODE_DIR / "sessions_index.json"
 
 
 def _load_session_index() -> dict[str, SessionMetadata]:
-    """Load the session index (lightweight metadata for all sessions)."""
+    """加载会话索引（所有会话的轻量元信息）。"""
     index_path = _session_index_file()
     if not index_path.exists():
         return {}
@@ -158,7 +158,7 @@ def _load_session_index() -> dict[str, SessionMetadata]:
 
 
 def _save_session_index(index: dict[str, SessionMetadata]) -> None:
-    """Save the session index."""
+    """保存会话索引。"""
     MINI_CODE_DIR.mkdir(parents=True, exist_ok=True)
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
     serializable = {
@@ -180,11 +180,10 @@ def _save_session_index(index: dict[str, SessionMetadata]) -> None:
 
 
 def _save_delta(session: SessionData) -> None:
-    """Save only the incremental changes since last full save.
-    
-    Delta files contain new messages and transcript entries appended
-    since the last save point. This is much cheaper than serializing
-    the entire session on every autosave.
+    """仅保存自上次保存以来的增量变更。
+
+    delta 文件包含上次保存以来新增的消息与 transcript，
+    比每次都序列化完整会话要轻量得多。
     """
     delta_dir = _session_delta_dir(session.session_id)
     delta_dir.mkdir(parents=True, exist_ok=True)
@@ -222,10 +221,10 @@ def _save_delta(session: SessionData) -> None:
 
 
 def _consolidate_deltas(session: SessionData) -> None:
-    """Merge all delta files into the full session file and clean up.
-    
-    This is called periodically to prevent unbounded delta file growth
-    and to ensure the full session file stays consistent.
+    """将所有 delta 文件合并到主会话文件中并清理。
+
+    定期调用以防止 delta 文件无限增长，
+    同时保证主会话文件保持一致。
     """
     delta_dir = _session_delta_dir(session.session_id)
     if not delta_dir.exists():
@@ -252,16 +251,16 @@ def _consolidate_deltas(session: SessionData) -> None:
 
 
 def save_session(session: SessionData, force_full: bool = False) -> None:
-    """Persist session to disk with incremental delta support.
-    
-    Uses a hybrid strategy:
-    - Delta saves: Only append new messages/transcripts (fast, small I/O)
-    - Full saves: Serialize entire session (slower, but ensures consistency)
-    - Consolidation: Merge deltas into full file periodically
-    
-    Args:
-        session: The session to save
-        force_full: Force a full save (e.g., on explicit save command)
+    """将会话持久化到磁盘，支持增量保存。
+
+    采用混合策略：
+    - delta 保存：仅追加新增的消息/transcript（速度快、I/O 小）
+    - 完整保存：序列化整个会话（较慢，但保证一致）
+    - 合并：定期把 delta 合并回主文件
+
+    参数：
+        session: 待保存的会话
+        force_full: 是否强制完整保存（如执行显式保存命令时）
     """
     session.update_metadata()
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
@@ -321,13 +320,13 @@ def save_session(session: SessionData, force_full: bool = False) -> None:
 
 
 def load_session(session_id: str) -> SessionData | None:
-    """Load a session from disk, applying any pending deltas.
-    
-    Loading process:
-    1. Load the base session file
-    2. Scan for delta files
-    3. Apply deltas in order (append new messages/transcripts)
-    4. Update tracking counters
+    """从磁盘加载会话，并应用所有挂起的 delta。
+
+    加载流程：
+    1. 加载主会话文件
+    2. 扫描 delta 文件
+    3. 按顺序应用 delta（追加新消息/transcript）
+    4. 更新跟踪计数器
     """
     session_path = _session_file(session_id)
     if not session_path.exists():
@@ -463,10 +462,10 @@ def get_latest_session(workspace: str | None = None) -> SessionData | None:
 # ---------------------------------------------------------------------------
 
 class AutosaveManager:
-    """Manages automatic session saving with rate limiting and delta support.
-    
-    Uses incremental saves for autosave (fast) and full saves for
-    explicit save commands (consistent).
+    """带速率限制和 delta 支持的自动保存管理器。
+
+    自动保存使用增量 delta（速度快），
+    显式保存命令使用完整保存（保证一致）。
     """
 
     def __init__(self, session: SessionData, interval: int = AUTOSAVE_INTERVAL_SECONDS):

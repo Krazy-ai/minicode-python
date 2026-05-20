@@ -1,6 +1,7 @@
-"""Interactive installer for MiniCode Python.
+"""MiniCode 的交互式安装向导。
 
-Configures model, API credentials, and installs launcher script.
+负责配置模型名 / API 凭据，并把 launcher 脚本安装到平台专属的 bin 目录。
+被 ``minicode-py --install`` 调用。
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from minicode.config import (
 
 
 def _read_input(prompt: str, default: str | None = None) -> str:
-    """Read input from user with optional default value."""
+    """从 stdin 读取一行输入，可指定默认值。Ctrl+C / EOF 时优雅退出。"""
     suffix = f" [{default}]" if default else ""
     try:
         value = input(f"{prompt}{suffix}: ").strip()
@@ -31,7 +32,7 @@ def _read_input(prompt: str, default: str | None = None) -> str:
 
 
 def _require_input(prompt: str, default: str | None = None) -> str:
-    """Require non-empty input, with optional default."""
+    """要求非空输入，否则反复询问。"""
     while True:
         value = _read_input(prompt, default)
         if value:
@@ -40,22 +41,24 @@ def _require_input(prompt: str, default: str | None = None) -> str:
 
 
 def _mask_secret(secret: str | None) -> str:
-    """Show masked secret status."""
+    """以脱敏形式显示密钥状态。"""
     if not secret:
         return "[not set]"
     return "[saved]"
 
 
 def _install_launcher_script() -> str | None:
-    """Install launcher script to platform-specific bin directory.
+    """把 launcher 脚本安装到平台对应的 bin 目录。
 
-    Returns the installation path, or None if skipped.
+    Returns:
+        成功时返回 ``(launcher_path, launcher_command, target_bin_dir)`` 元组；
+        失败或被用户跳过时返回 ``None``。
     """
     home = Path.home()
 
-    # Determine target bin directory and script based on platform
+    # 根据平台决定目标 bin 目录与脚本格式
     if sys.platform == "win32":
-        # Windows: Use ~/.mini-code/bin with .bat script
+        # Windows：装到 ~/.mini-code/bin，使用 .bat 脚本
         target_bin_dir = MINI_CODE_DIR / "bin"
         launcher_path = target_bin_dir / "minicode.bat"
         python_exe = sys.executable.replace("/", "\\")
@@ -67,7 +70,7 @@ def _install_launcher_script() -> str | None:
         ])
         launcher_command = "minicode.bat"
     elif sys.platform == "darwin":
-        # macOS: Use ~/.local/bin with bash script (also works with zsh)
+        # macOS：装到 ~/.local/bin，使用 bash 脚本（zsh 也兼容）
         target_bin_dir = home / ".local" / "bin"
         launcher_path = target_bin_dir / "minicode-py"
         python_exe = sys.executable
@@ -81,7 +84,7 @@ def _install_launcher_script() -> str | None:
         ])
         launcher_command = "minicode-py"
     else:
-        # Linux: Use ~/.local/bin with bash script
+        # Linux：装到 ~/.local/bin，使用 bash 脚本
         target_bin_dir = home / ".local" / "bin"
         launcher_path = target_bin_dir / "minicode-py"
         python_exe = sys.executable
@@ -108,8 +111,8 @@ def _install_launcher_script() -> str | None:
 
     try:
         target_bin_dir.mkdir(parents=True, exist_ok=True)
-        
-        # 原子写入
+
+        # 原子写入：先写入临时文件再 rename，避免半成品脚本被执行
         fd, tmp_path = tempfile.mkstemp(dir=str(target_bin_dir), suffix=".tmp")
         try:
             with os.fdopen(fd, 'w', encoding='utf-8') as f:
@@ -122,7 +125,7 @@ def _install_launcher_script() -> str | None:
                 pass
             raise
 
-        # Make executable on Unix-like systems
+        # 在类 Unix 系统上加上可执行权限
         if sys.platform != "win32":
             current_permissions = launcher_path.stat().st_mode
             launcher_path.chmod(current_permissions | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
@@ -135,13 +138,13 @@ def _install_launcher_script() -> str | None:
 
 
 def _check_path_entry(target_dir: str) -> bool:
-    """Check if target directory is in PATH."""
+    """检查目标目录是否已在当前 PATH 中。"""
     path_entries = os.environ.get("PATH", "").split(os.pathsep)
     return target_dir in path_entries
 
 
 def main() -> None:
-    """Run the interactive installer."""
+    """运行交互式安装向导。被 ``minicode-py --install`` 调用。"""
     print("=" * 60)
     print("  MiniCode Python 安装向导")
     print("=" * 60)
@@ -149,16 +152,16 @@ def main() -> None:
     print(f"配置会写入: {MINI_CODE_SETTINGS_PATH}")
     print("配置保存在独立目录中，不会影响其它本地工具配置。")
     print()
-    
-    # Load existing settings
+
+    # 加载已有配置作为默认值
     try:
         settings = load_effective_settings()
     except Exception:
         settings = {}
-    
+
     current_env = settings.get("env", {})
-    
-    # Collect configuration
+
+    # 收集配置项
     print("📋 请输入配置信息：")
     print()
     
@@ -186,7 +189,7 @@ def main() -> None:
     
     auth_token = auth_token or saved_auth_token
     
-    # Save configuration
+    # 保存配置
     print("\n💾 保存配置...")
     try:
         save_mini_code_settings({
@@ -202,7 +205,7 @@ def main() -> None:
         print(f"\n❌ 保存配置失败: {e}")
         sys.exit(1)
     
-    # Install launcher script
+    # 安装 launcher 脚本
     print("\n🚀 安装启动器...")
     launcher_result = _install_launcher_script()
 
@@ -210,7 +213,7 @@ def main() -> None:
         launcher_path, launcher_command, target_bin_dir = launcher_result
         print(f"✅ 启动器已安装: {launcher_path}")
 
-        # Check PATH and provide platform-specific instructions
+        # 检查 PATH 并按平台给出对应的添加方法
         if not _check_path_entry(target_bin_dir):
             print()
             print("⚠️  你的 PATH 里还没有", target_bin_dir)
@@ -242,7 +245,7 @@ def main() -> None:
             print()
             print(f"✅ 现在你可以在任意终端输入 `{launcher_command}` 启动。")
 
-    # Final summary
+    # 最终摘要
     print()
     print("=" * 60)
     print("  安装完成！")

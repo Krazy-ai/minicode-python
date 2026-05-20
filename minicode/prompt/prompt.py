@@ -249,7 +249,7 @@ def build_system_prompt(
             cache_ttl=600.0,
         )
 
-    # Project CLAUDE.md (file-cached)
+    # 项目级 CLAUDE.md（文件级缓存）
     project_claude_md = _maybe_read(cwd_path / "CLAUDE.md")
     if project_claude_md:
         pipeline.register_dynamic(

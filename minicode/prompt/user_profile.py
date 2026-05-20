@@ -1,15 +1,15 @@
-"""USER.md user profile system for persisting user preferences.
+"""USER.md 用户画像系统：用于持久化用户偏好。
 
-Supports two scopes:
-- Global: ~/.mini-code/USER.md  (applies across all projects)
-- Project: .mini-code/USER.md   (project-specific overrides)
+支持两种作用域：
+- 全局：``~/.mini-code/USER.md``（在所有项目中生效）
+- 项目：``.mini-code/USER.md``（项目内的覆盖）
 
-Profile sections:
-- preferences: General preferences (language, verbosity, response style)
-- coding_style: Code formatting and style preferences
-- common_patterns: Frequently used patterns and conventions
-- project_context: Project-specific notes and context
-- custom_instructions: Free-form instructions for the assistant
+画像分节：
+- preferences：通用偏好（语言、详略、回答风格等）
+- coding_style：代码格式与风格偏好
+- common_patterns：常用模式与约定
+- project_context：项目相关备忘
+- custom_instructions: 自由格式的助手指令
 """
 
 from __future__ import annotations
@@ -21,47 +21,47 @@ from typing import Optional
 
 
 # ---------------------------------------------------------------------------
-# Data structures
+# 数据结构
 # ---------------------------------------------------------------------------
 
 @dataclass
 class UserPreferences:
-    """General user preferences."""
-    language: str = ""           # e.g. "zh-CN", "en-US"
-    verbosity: str = ""          # "concise" | "normal" | "detailed"
-    response_style: str = ""    # "formal" | "casual" | "technical"
-    preferred_framework: str = ""  # e.g. "react", "vue", "svelte"
-    preferred_test_framework: str = ""  # e.g. "pytest", "jest"
-    auto_format: bool = False    # Auto-format code on edit
+    """通用用户偏好。"""
+    language: str = ""           # 例如 "zh-CN" / "en-US"
+    verbosity: str = ""          # "concise" / "normal" / "detailed"
+    response_style: str = ""    # "formal" / "casual" / "technical"
+    preferred_framework: str = ""  # 如 "react" / "vue" / "svelte"
+    preferred_test_framework: str = ""  # 如 "pytest" / "jest"
+    auto_format: bool = False    # 编辑后自动格式化代码
 
 
 @dataclass
 class CodingStyle:
-    """Code style preferences."""
-    indent_style: str = ""       # "spaces" | "tabs"
-    indent_size: int = 0         # 2, 4, etc.
-    quote_style: str = ""        # "single" | "double"
-    semicolons: bool = False     # For JS/TS
+    """代码风格偏好。"""
+    indent_style: str = ""       # "spaces" / "tabs"
+    indent_size: int = 0         # 2 / 4 ...
+    quote_style: str = ""        # "single" / "double"
+    semicolons: bool = False     # JS/TS 是否需要分号
     trailing_comma: bool = False
     max_line_length: int = 0
-    naming_convention: str = ""  # "camelCase", "snake_case", "PascalCase"
+    naming_convention: str = ""  # camelCase / snake_case / PascalCase
 
 
 @dataclass
 class UserProfile:
-    """Complete user profile loaded from USER.md."""
+    """从 USER.md 加载得到的完整画像。"""
     preferences: UserPreferences = field(default_factory=UserPreferences)
     coding_style: CodingStyle = field(default_factory=CodingStyle)
     common_patterns: list[str] = field(default_factory=list)
     project_context: str = ""
     custom_instructions: str = ""
-    # Metadata
-    source_path: str = ""        # Which file this was loaded from
-    raw_content: str = ""        # Original Markdown content
+    # 元信息
+    source_path: str = ""        # 该画像加载自哪个文件
+    raw_content: str = ""        # 原始 Markdown
 
 
 # ---------------------------------------------------------------------------
-# Markdown parser
+# Markdown 解析
 # ---------------------------------------------------------------------------
 
 _SECTION_RE = re.compile(r"^##\s+(.+)$", re.MULTILINE)
@@ -70,7 +70,7 @@ _LIST_ITEM_RE = re.compile(r"^-\s+(.+)$", re.MULTILINE)
 
 
 def _parse_section_body(body: str) -> dict[str, str]:
-    """Parse key-value pairs from a section body like '- **key**: value'."""
+    """从「- **key**: value」形式的小节正文里解析键值对。"""
     result: dict[str, str] = {}
     for line in body.strip().splitlines():
         m = _KV_RE.match(line.strip())
@@ -80,7 +80,7 @@ def _parse_section_body(body: str) -> dict[str, str]:
 
 
 def _parse_list_items(body: str) -> list[str]:
-    """Parse list items from a section body like '- item'."""
+    """从「- item」形式的小节正文里解析列表项。"""
     items: list[str] = []
     for line in body.strip().splitlines():
         m = _LIST_ITEM_RE.match(line.strip())
@@ -90,20 +90,20 @@ def _parse_list_items(body: str) -> list[str]:
 
 
 def parse_user_md(content: str) -> UserProfile:
-    """Parse USER.md Markdown content into a UserProfile."""
+    """把 USER.md Markdown 文本解析为 UserProfile。"""
     profile = UserProfile(raw_content=content)
 
-    # Split into sections by ## headings
+    # 按 ## 分小节
     sections: dict[str, str] = {}
     parts = _SECTION_RE.split(content)
 
-    # parts[0] is before first heading, then alternating: heading, body
+    # parts[0] 是首个 heading 之前的内容；之后按 (heading, body) 交替
     for i in range(1, len(parts) - 1, 2):
         heading = parts[i].strip().lower().replace(" ", "_")
         body = parts[i + 1]
         sections[heading] = body
 
-    # Parse preferences
+    # 解析 preferences
     if "preferences" in sections:
         kv = _parse_section_body(sections["preferences"])
         p = profile.preferences
@@ -114,7 +114,7 @@ def parse_user_md(content: str) -> UserProfile:
         p.preferred_test_framework = kv.get("preferred_test_framework", "")
         p.auto_format = kv.get("auto_format", "").lower() in ("true", "yes", "1")
 
-    # Parse coding_style
+    # 解析 coding_style
     if "coding_style" in sections:
         kv = _parse_section_body(sections["coding_style"])
         cs = profile.coding_style
@@ -132,15 +132,15 @@ def parse_user_md(content: str) -> UserProfile:
             cs.max_line_length = 0
         cs.naming_convention = kv.get("naming_convention", "")
 
-    # Parse common_patterns
+    # 解析 common_patterns
     if "common_patterns" in sections:
         profile.common_patterns = _parse_list_items(sections["common_patterns"])
 
-    # Parse project_context (free text after heading)
+    # 解析 project_context（标题之后的自由文本）
     if "project_context" in sections:
         profile.project_context = sections["project_context"].strip()
 
-    # Parse custom_instructions (free text after heading)
+    # 解析 custom_instructions（标题之后的自由文本）
     if "custom_instructions" in sections:
         profile.custom_instructions = sections["custom_instructions"].strip()
 
@@ -148,11 +148,11 @@ def parse_user_md(content: str) -> UserProfile:
 
 
 # ---------------------------------------------------------------------------
-# Markdown serializer
+# Markdown 序列化
 # ---------------------------------------------------------------------------
 
 def serialize_user_md(profile: UserProfile) -> str:
-    """Serialize a UserProfile back into USER.md Markdown format."""
+    """把 UserProfile 序列化回 USER.md Markdown。"""
     lines: list[str] = ["# User Profile", ""]
 
     # Preferences
@@ -218,11 +218,11 @@ def serialize_user_md(profile: UserProfile) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Profile manager
+# 画像管理器
 # ---------------------------------------------------------------------------
 
 class UserProfileManager:
-    """Manage USER.md profiles with global + project scope merging."""
+    """统一管理 USER.md 画像（合并 global + project 作用域）。"""
 
     def __init__(self, cwd: str | Path | None = None):
         from minicode.config import MINI_CODE_DIR
@@ -238,15 +238,15 @@ class UserProfileManager:
         return self._project_path
 
     def load_global(self) -> Optional[UserProfile]:
-        """Load global profile from ~/.mini-code/USER.md."""
+        """从 ``~/.mini-code/USER.md`` 加载全局画像。"""
         return self._load_from(self._global_path)
 
     def load_project(self) -> Optional[UserProfile]:
-        """Load project profile from .mini-code/USER.md."""
+        """从 ``.mini-code/USER.md`` 加载项目画像。"""
         return self._load_from(self._project_path)
 
     def load_merged(self) -> UserProfile:
-        """Load and merge global + project profiles. Project overrides global."""
+        """加载并合并 global + project 画像，project 覆盖 global。"""
         global_profile = self.load_global()
         project_profile = self.load_project()
 
@@ -260,15 +260,15 @@ class UserProfileManager:
         return self._merge_profiles(global_profile, project_profile)
 
     def save_global(self, profile: UserProfile) -> None:
-        """Save profile to global path."""
+        """保存到全局路径。"""
         self._save_to(self._global_path, profile)
 
     def save_project(self, profile: UserProfile) -> None:
-        """Save profile to project path."""
+        """保存到项目路径。"""
         self._save_to(self._project_path, profile)
 
     def to_prompt_section(self, profile: UserProfile) -> str:
-        """Convert profile to a system prompt section for LLM injection."""
+        """把 profile 转换为可注入到 system prompt 的段落。"""
         parts: list[str] = ["## User Profile", ""]
 
         p = profile.preferences
@@ -316,29 +316,29 @@ class UserProfileManager:
         return "\n".join(parts)
 
     def search_preferences(self, profile: UserProfile, query: str) -> list[str]:
-        """Search profile for preferences matching a query string."""
+        """在 profile 中搜索包含 query 的偏好项。"""
         query_lower = query.lower()
         matches: list[str] = []
 
-        # Check preferences
+        # 检查 preferences
         for attr in ["language", "verbosity", "response_style",
                      "preferred_framework", "preferred_test_framework"]:
             val = getattr(profile.preferences, attr, "")
             if val and query_lower in val.lower():
                 matches.append(f"preference.{attr} = {val}")
 
-        # Check coding style
+        # 检查 coding style
         for attr in ["indent_style", "quote_style", "naming_convention"]:
             val = getattr(profile.coding_style, attr, "")
             if val and query_lower in val.lower():
                 matches.append(f"coding_style.{attr} = {val}")
 
-        # Check patterns
+        # 检查 patterns
         for pattern in profile.common_patterns:
             if query_lower in pattern.lower():
                 matches.append(f"pattern: {pattern}")
 
-        # Check free text
+        # 检查自由文本字段
         for text, label in [
             (profile.project_context, "project_context"),
             (profile.custom_instructions, "custom_instructions"),
@@ -349,12 +349,12 @@ class UserProfileManager:
         return matches
 
     # -----------------------------------------------------------------------
-    # Internal helpers
+    # 内部辅助方法
     # -----------------------------------------------------------------------
 
     @staticmethod
     def _load_from(path: Path) -> Optional[UserProfile]:
-        """Load a profile from a specific path."""
+        """从指定路径加载 profile。"""
         if not path.exists() or not path.is_file():
             return None
         try:
@@ -367,24 +367,24 @@ class UserProfileManager:
 
     @staticmethod
     def _save_to(path: Path, profile: UserProfile) -> None:
-        """Save a profile to a specific path."""
+        """保存 profile 到指定路径。"""
         path.parent.mkdir(parents=True, exist_ok=True)
         content = serialize_user_md(profile)
         path.write_text(content, encoding="utf-8")
 
     @staticmethod
     def _merge_profiles(global_p: UserProfile, project_p: UserProfile) -> UserProfile:
-        """Merge global and project profiles. Project values override global."""
+        """合并 global 与 project 画像（project 覆盖 global）。"""
         merged = UserProfile()
 
-        # Merge preferences (project overrides global for non-empty values)
+        # 合并 preferences（project 非空值优先）
         gp, pp, mp = global_p.preferences, project_p.preferences, merged.preferences
         for attr in ["language", "verbosity", "response_style",
                      "preferred_framework", "preferred_test_framework"]:
             setattr(mp, attr, getattr(pp, attr, "") or getattr(gp, attr, ""))
         mp.auto_format = pp.auto_format or gp.auto_format
 
-        # Merge coding style
+        # 合并 coding style
         gcs, pcs, mcs = global_p.coding_style, project_p.coding_style, merged.coding_style
         for attr in ["indent_style", "quote_style", "naming_convention"]:
             setattr(mcs, attr, getattr(pcs, attr, "") or getattr(gcs, attr, ""))
@@ -393,39 +393,39 @@ class UserProfileManager:
         mcs.semicolons = pcs.semicolons or gcs.semicolons
         mcs.trailing_comma = pcs.trailing_comma or gcs.trailing_comma
 
-        # Merge lists (deduplicated)
+        # 合并列表（去重）
         seen: set[str] = set()
         for pattern in global_p.common_patterns + project_p.common_patterns:
             if pattern not in seen:
                 merged.common_patterns.append(pattern)
                 seen.add(pattern)
 
-        # Free text: project overrides global
+        # 自由文本：project 覆盖 global
         merged.project_context = project_p.project_context or global_p.project_context
         merged.custom_instructions = project_p.custom_instructions or global_p.custom_instructions
 
-        # Source metadata
+        # 来源信息
         merged.source_path = f"{global_p.source_path} + {project_p.source_path}"
 
         return merged
 
 
 # ---------------------------------------------------------------------------
-# CLI command handler
+# CLI 命令处理
 # ---------------------------------------------------------------------------
 
 def handle_user_command(args: str, cwd: str | Path | None = None) -> str:
-    """Handle /user CLI commands.
+    """处理 ``/user`` 子命令。
 
-    Subcommands:
-        /user           — Show merged profile summary
-        /user global    — Show global profile
-        /user project   — Show project profile
-        /user paths     — Show profile file paths
-        /user reset     — Reset (delete) the project profile
-        /user reset-global — Reset (delete) the global profile
-        /user set <key> <value> — Set a preference (dot-notation, e.g. preferences.language)
-        /user search <query> — Search profile for matching preferences
+    支持的子命令：
+        /user           — 展示合并后的画像摘要
+        /user global    — 展示全局画像
+        /user project   — 展示项目画像
+        /user paths     — 展示画像文件路径
+        /user reset     — 重置（删除）项目画像
+        /user reset-global — 重置（删除）全局画像
+        /user set <key> <value> — 设置某项偏好（点路径，如 preferences.language）
+        /user search <query> — 搜索画像中匹配的偏好
     """
     manager = UserProfileManager(cwd)
     parts = args.strip().split(maxsplit=1)
@@ -488,30 +488,30 @@ def handle_user_command(args: str, cwd: str | Path | None = None) -> str:
 
 
 def _handle_user_set(args: str, manager: UserProfileManager) -> str:
-    """Handle /user set <key> <value>."""
+    """处理 ``/user set <key> <value>``。"""
     parts = args.strip().split(maxsplit=1)
     if len(parts) < 2:
         return "Usage: /user set <key> <value>\nKeys: preferences.language, preferences.verbosity, etc."
     key, value = parts[0].strip(), parts[1].strip()
 
-    # Determine scope: if key starts with "project.", save to project; else global
+    # 决定作用域：``project.`` 前缀写入项目画像，否则写入全局
     scope = "global"
     if key.startswith("project."):
         key = key[len("project."):]
         scope = "project"
 
-    # Load existing profile
+    # 加载已有画像
     if scope == "project":
         profile = manager.load_project() or UserProfile()
     else:
         profile = manager.load_global() or UserProfile()
 
-    # Apply the setting
+    # 应用本次设置
     changed = _apply_setting(profile, key, value)
     if not changed:
         return f"Unknown profile key: {key}\nValid keys: preferences.*, coding_style.*, project_context, custom_instructions"
 
-    # Save
+    # 保存
     if scope == "project":
         manager.save_project(profile)
         return f"Set {key} = {value} in project profile ({manager.project_path})"
@@ -521,7 +521,7 @@ def _handle_user_set(args: str, manager: UserProfileManager) -> str:
 
 
 def _apply_setting(profile: UserProfile, key: str, value: str) -> bool:
-    """Apply a single setting to a profile. Returns True if key was valid."""
+    """将单个设置写入 profile，返回是否找到合法 key。"""
     # Preferences
     pref_keys = {
         "preferences.language": "language",

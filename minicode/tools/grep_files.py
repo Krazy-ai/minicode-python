@@ -1,7 +1,7 @@
-"""Grep tool — search file contents with regex, glob filtering, and context lines.
+"""Grep 工具：基于正则、glob 过滤与上下文行的文件内容搜索。
 
-Inspired by Claude Code's Grep tool which uses ripgrep-level search
-with AST-aware filtering, glob patterns, and context lines.
+参考 Claude Code 的 Grep 工具，提供接近 ripgrep 的搜索体验，
+支持 AST 感知过滤、glob 模式与上下文行。
 """
 from __future__ import annotations
 

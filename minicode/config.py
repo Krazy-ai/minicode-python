@@ -1,3 +1,13 @@
+"""配置加载与校验。
+
+负责把多个来源的配置（环境变量、~/.mini-code/settings.json、
+~/.claude/settings.json、项目级 .mcp.json）合并为统一的 runtime 字典，
+并提供配置诊断、模型名拼写建议、provider 校验等能力。
+
+配置优先级（高 → 低）：
+    process.env > ~/.mini-code/settings.json > 项目级 .mcp.json
+                > 全局 .mcp.json > ~/.claude/settings.json
+"""
 from __future__ import annotations
 
 import json
@@ -8,17 +18,19 @@ from urllib.parse import urlparse
 from typing import Any
 
 
+# 所有配置/数据文件的根目录
 MINI_CODE_DIR = Path.home() / ".mini-code"
 MINI_CODE_SETTINGS_PATH = MINI_CODE_DIR / "settings.json"
 MINI_CODE_HISTORY_PATH = MINI_CODE_DIR / "history.json"
 MINI_CODE_PERMISSIONS_PATH = MINI_CODE_DIR / "permissions.json"
 MINI_CODE_MCP_PATH = MINI_CODE_DIR / "mcp.json"
 MINI_CODE_USER_PROFILE_PATH = MINI_CODE_DIR / "USER.md"
+# 兼容 Claude Code：若用户已有 ~/.claude/settings.json 则一并读取
 CLAUDE_SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
 
 
 def project_user_profile_path(cwd: str | Path | None = None) -> Path:
-    """Return the project-level USER.md path."""
+    """返回项目级 USER.md 的路径（位于 <cwd>/.mini-code/USER.md）。"""
     return Path(cwd or Path.cwd()) / ".mini-code" / "USER.md"
 
 # 已知的合法模型名称（用于拼写检查提示）
@@ -32,7 +44,7 @@ KNOWN_MODELS = [
     "o1",
     "o1-mini",
     "o3-mini",
-    # OpenRouter popular models
+    # OpenRouter 上的常见模型
     "openrouter/auto",
     "anthropic/claude-sonnet-4",
     "anthropic/claude-opus-4",
@@ -49,38 +61,42 @@ KNOWN_MODELS = [
 
 
 def _suggest_model_name(typed: str) -> str:
-    """根据输入建议最接近的合法模型名称"""
+    """根据用户输入推断最接近的合法模型名（用于"你是不是想输入..."提示）。"""
     if not typed:
         return ""
-    
-    # 简单的前缀匹配
+
+    # 优先尝试前缀匹配
     for model in KNOWN_MODELS:
         if model.startswith(typed.lower()):
             return model
-    
-    # 模糊匹配：包含输入字符的模型
+
+    # 退而求其次：包含输入子串的模型
     for model in KNOWN_MODELS:
         if typed.lower() in model:
             return model
-    
+
     return ""
 
 
 def project_mcp_path(cwd: str | Path | None = None) -> Path:
+    """返回项目级 MCP 配置路径（<cwd>/.mcp.json）。"""
     return Path(cwd or Path.cwd()) / ".mcp.json"
 
 
 def _read_json_file(file_path: Path) -> dict[str, Any]:
+    """读取 JSON 文件，文件不存在时返回空字典。"""
     if not file_path.exists():
         return {}
     return json.loads(file_path.read_text(encoding="utf-8"))
 
 
 def read_settings_file(file_path: Path) -> dict[str, Any]:
+    """读取通用设置文件。"""
     return _read_json_file(file_path)
 
 
 def read_mcp_config_file(file_path: Path) -> dict[str, Any]:
+    """读取 MCP 配置文件并提取 mcpServers 字段。"""
     parsed = _read_json_file(file_path)
     if not isinstance(parsed, dict):
         return {}
@@ -89,6 +105,12 @@ def read_mcp_config_file(file_path: Path) -> dict[str, Any]:
 
 
 def merge_settings(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """合并两份配置，override 优先。
+
+    对 env 与 mcpServers 字段做深合并：
+        - env: override 的键覆盖 base
+        - mcpServers: 同名 server 的字段做浅合并，env 子字段做深合并
+    """
     merged_mcp = dict(base.get("mcpServers", {}))
     for name, server in override.get("mcpServers", {}).items():
         current = dict(merged_mcp.get(name, {}))
@@ -112,6 +134,14 @@ def merge_settings(base: dict[str, Any], override: dict[str, Any]) -> dict[str, 
 
 
 def load_effective_settings(cwd: str | Path | None = None) -> dict[str, Any]:
+    """加载并合并所有来源的配置，得到最终生效的字典。
+
+    合并顺序（后者覆盖前者）：
+        ~/.claude/settings.json
+        → 全局 ~/.mini-code/mcp.json
+        → 项目级 .mcp.json
+        → ~/.mini-code/settings.json
+    """
     claude_settings = read_settings_file(CLAUDE_SETTINGS_PATH)
     global_mcp = read_mcp_config_file(MINI_CODE_MCP_PATH)
     project_mcp = read_mcp_config_file(project_mcp_path(cwd))
@@ -127,6 +157,7 @@ def load_effective_settings(cwd: str | Path | None = None) -> dict[str, Any]:
 
 
 def save_mini_code_settings(updates: dict[str, Any]) -> None:
+    """合并 updates 到 ~/.mini-code/settings.json 并落盘。"""
     MINI_CODE_DIR.mkdir(parents=True, exist_ok=True)
     existing = read_settings_file(MINI_CODE_SETTINGS_PATH)
     next_settings = merge_settings(existing, updates)
@@ -137,6 +168,11 @@ def save_mini_code_settings(updates: dict[str, Any]) -> None:
 
 
 def load_runtime_config(cwd: str | Path | None = None) -> dict[str, Any]:
+    """加载完整的 runtime 配置字典。
+
+    包括：模型名、各 provider 的 base URL / API key、MCP 服务器、用户画像
+    路径、响应语言/详略偏好等。若必要项缺失（model 或 auth）会抛 RuntimeError。
+    """
     effective = load_effective_settings(cwd)
     env = {**dict(effective.get("env", {})), **os.environ}
     model = (
@@ -145,7 +181,7 @@ def load_runtime_config(cwd: str | Path | None = None) -> dict[str, Any]:
         or str(env.get("ANTHROPIC_MODEL", "")).strip()
     )
 
-    # --- Provider-specific base URLs ---
+    # --- 各 provider 的 base URL ---
     # Anthropic
     base_url = str(env.get("ANTHROPIC_BASE_URL", "")).strip() or "https://api.anthropic.com"
     auth_token = str(env.get("ANTHROPIC_AUTH_TOKEN", "")).strip() or None
@@ -167,7 +203,7 @@ def load_runtime_config(cwd: str | Path | None = None) -> dict[str, Any]:
     )
     openrouter_api_key = str(env.get("OPENROUTER_API_KEY", "")).strip()
 
-    # Custom endpoint
+    # 自定义端点（OpenAI 兼容）
     custom_base_url = (
         str(env.get("CUSTOM_API_BASE_URL", "")).strip()
         or effective.get("customBaseUrl", "")
@@ -192,7 +228,7 @@ def load_runtime_config(cwd: str | Path | None = None) -> dict[str, Any]:
         except (TypeError, ValueError):
             max_output_tokens = None
 
-    # Validate: at least one auth method must be available
+    # 校验：至少要配置一种 auth 方式
     has_auth = any([
         auth_token, api_key, openai_api_key, openrouter_api_key, custom_api_key,
     ])
@@ -204,11 +240,11 @@ def load_runtime_config(cwd: str | Path | None = None) -> dict[str, Any]:
             "OPENROUTER_API_KEY, or CUSTOM_API_KEY."
         )
 
-    # --- User profile paths ---
+    # --- 用户画像 USER.md 路径 ---
     global_user_profile = MINI_CODE_USER_PROFILE_PATH
     proj_user_profile = project_user_profile_path(cwd)
 
-    # --- User preferences from settings (lightweight, not from USER.md) ---
+    # --- 来自 settings 的轻量级偏好（非 USER.md 完整画像） ---
     user_preferences = effective.get("userPreferences", {})
     response_language = (
         str(env.get("MINI_CODE_LANGUAGE", "")).strip()
@@ -246,6 +282,7 @@ def load_runtime_config(cwd: str | Path | None = None) -> dict[str, Any]:
 
 
 def _is_valid_http_url(value: str | None) -> bool:
+    """判断字符串是否为合法的 http(s) URL。"""
     if not value:
         return False
     parsed = urlparse(str(value))
@@ -253,11 +290,11 @@ def _is_valid_http_url(value: str | None) -> bool:
 
 
 def validate_provider_runtime(runtime: dict[str, Any]) -> list[str]:
-    """Validate the auth/base-url required by the detected provider.
+    """根据检测到的 provider 校验 auth / base-url 是否完备。
 
-    A generic API key is not enough: if the selected model routes to OpenAI,
-    OpenAI-compatible credentials must be present; likewise for Anthropic,
-    OpenRouter, and custom endpoints.
+    通用的 API key 不够用：所选 model 若路由到 OpenAI，必须具备 OpenAI
+    兼容凭据；Anthropic / OpenRouter / 自定义端点同理。返回错误消息列表
+    （为空则代表配置完整）。
     """
     from minicode.model.model_registry import Provider, detect_provider
 
@@ -298,27 +335,30 @@ def validate_provider_runtime(runtime: dict[str, Any]) -> list[str]:
 
 
 def get_mcp_config_path(scope: str, cwd: str | Path | None = None) -> Path:
+    """根据 scope 返回 MCP 配置路径：project 取项目级，否则取全局。"""
     return project_mcp_path(cwd) if scope == "project" else MINI_CODE_MCP_PATH
 
 
 def load_scoped_mcp_servers(scope: str, cwd: str | Path | None = None) -> dict[str, Any]:
+    """加载指定 scope（project / global）的 MCP 服务器配置。"""
     return read_mcp_config_file(get_mcp_config_path(scope, cwd))
 
 
 def save_scoped_mcp_servers(scope: str, servers: dict[str, Any], cwd: str | Path | None = None) -> None:
+    """保存指定 scope 的 MCP 服务器配置到磁盘。"""
     target = get_mcp_config_path(scope, cwd)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps({"mcpServers": servers}, indent=2) + "\n", encoding="utf-8")
 
 
 def validate_config(cwd: str | Path | None = None) -> tuple[bool, list[str]]:
-    """验证配置完整性，返回 (是否有效，错误列表)
-    
+    """验证配置完整性，返回 (是否有效, 错误/警告列表)。
+
     检查项：
-    1. 模型名称是否配置
-    2. API key 是否配置
-    3. 模型名称拼写是否正确
-    4. MCP 配置文件是否合法
+        1. 模型名称是否配置
+        2. API key 是否配置
+        3. 模型名称拼写是否在已知列表
+        4. MCP server 是否合法（有 command 字段）
     """
     errors: list[str] = []
     warnings: list[str] = []
@@ -387,7 +427,7 @@ def validate_config(cwd: str | Path | None = None) -> tuple[bool, list[str]]:
 
 
 def format_config_diagnostic(cwd: str | Path | None = None) -> str:
-    """格式化配置诊断信息"""
+    """格式化配置诊断信息，供 `--validate-config` 命令打印展示。"""
     is_valid, messages = validate_config(cwd)
     
     lines = ["Configuration Diagnostics", "=" * 40, ""]
@@ -415,7 +455,7 @@ def format_config_diagnostic(cwd: str | Path | None = None) -> str:
         lines.append("-" * 40)
         lines.append(f"  Model: {model_name}")
 
-        # Show provider info
+        # 显示 provider 信息
         from minicode.model.model_registry import detect_provider, Provider
         provider = detect_provider(model_name, config)
         lines.append(f"  Provider: {provider.value}")

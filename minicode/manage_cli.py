@@ -1,3 +1,14 @@
+"""管理类 CLI 子命令的实现。
+
+由 ``minicode-py`` 入口在解析完 argparse 参数后调用，处理以下子命令：
+
+    minicode mcp list / add / remove        管理 MCP 服务器配置
+    minicode skills list / add / remove     管理本地 SKILL.md
+    minicode valid-config                   打印配置诊断报告
+
+每个子命令都支持 ``--project`` / ``--user`` 选择 scope（默认 user）。
+所有 print 输出保持英文，便于脚本化与 grep。
+"""
 from __future__ import annotations
 
 from minicode.config import get_mcp_config_path, load_scoped_mcp_servers, save_scoped_mcp_servers
@@ -5,6 +16,7 @@ from minicode.prompt.skills import discover_skills, install_skill, remove_manage
 
 
 def _print_usage() -> None:
+    """打印管理子命令的英文用法说明。"""
     print(
         "minicode management commands\n\n"
         "minicode mcp list [--project]\n"
@@ -18,6 +30,7 @@ def _print_usage() -> None:
 
 
 def _parse_scope(args: list[str]) -> tuple[str, list[str]]:
+    """从参数列表中解析 ``--project`` 标志，返回 ``(scope, 剩余参数)``。"""
     rest = list(args)
     if "--project" in rest:
         rest.remove("--project")
@@ -26,6 +39,7 @@ def _parse_scope(args: list[str]) -> tuple[str, list[str]]:
 
 
 def _take_option(args: list[str], name: str) -> str | None:
+    """原地从参数列表里"取走" ``name <value>`` 形式的选项，返回 value（无则 None）。"""
     if name not in args:
         return None
     index = args.index(name)
@@ -37,6 +51,7 @@ def _take_option(args: list[str], name: str) -> str | None:
 
 
 def _take_repeat_option(args: list[str], name: str) -> list[str]:
+    """同 ``_take_option``，但允许同一选项重复出现多次（如 ``--env``）。"""
     values: list[str] = []
     while name in args:
         index = args.index(name)
@@ -48,6 +63,7 @@ def _take_repeat_option(args: list[str], name: str) -> list[str]:
 
 
 def _parse_env_pairs(values: list[str]) -> dict[str, str]:
+    """把 ``KEY=VALUE`` 形式的字符串列表解析成 dict，格式不对时抛 RuntimeError。"""
     env: dict[str, str] = {}
     for entry in values:
         if "=" not in entry:
@@ -60,6 +76,7 @@ def _parse_env_pairs(values: list[str]) -> dict[str, str]:
 
 
 def _handle_mcp_command(cwd: str, args: list[str]) -> bool:
+    """处理 ``minicode mcp <list|add|remove>``。返回 True 表示已处理。"""
     if not args:
         _print_usage()
         return True
@@ -116,6 +133,7 @@ def _handle_mcp_command(cwd: str, args: list[str]) -> bool:
 
 
 def _handle_skills_command(cwd: str, args: list[str]) -> bool:
+    """处理 ``minicode skills <list|add|remove>``。返回 True 表示已处理。"""
     if not args:
         _print_usage()
         return True
@@ -151,6 +169,12 @@ def _handle_skills_command(cwd: str, args: list[str]) -> bool:
 
 
 def maybe_handle_management_command(cwd: str, argv: list[str]) -> bool:
+    """识别并分发管理类子命令。
+
+    Returns:
+        True  → argv 已被本模块处理（调用方应该退出，不再进入 TUI）
+        False → 不是管理子命令，让调用方继续按常规流程走
+    """
     if not argv:
         return False
     category, *rest = argv

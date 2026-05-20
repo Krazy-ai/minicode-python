@@ -1,9 +1,21 @@
+"""Agent 智能层：错误分类、恢复策略、推动消息生成、工具调度。
+
+包含四个核心组件：
+    - ErrorCategory / RecoveryStrategy：错误类型枚举与恢复策略枚举
+    - ErrorClassifier：基于关键词模式识别错误类型，给出推荐策略
+    - NudgeGenerator：根据分类结果生成给 LLM 的"推一把"消息（nudge）
+    - ToolScheduler：根据历史成功率与并发安全性，把工具调用分成并发批与串行批
+
+注意：本文件中的 ``TEMPLATES`` 字典里所有英文模板是**直接发送给 LLM 的提示**，
+影响 agent 后续行为与措辞，**保留英文不翻译**。中文翻译只覆盖代码注释/docstring。
+"""
 from enum import Enum, auto
 from dataclasses import dataclass
 from typing import Any
 
 
 class ErrorCategory(Enum):
+    """工具/API 错误的类别枚举，用于驱动恢复策略选择。"""
     NETWORK = "network"
     PERMISSION = "permission"
     RESOURCE = "resource"
@@ -13,6 +25,7 @@ class ErrorCategory(Enum):
 
 
 class RecoveryStrategy(Enum):
+    """错误恢复策略枚举。"""
     RETRY_EXPONENTIAL_BACKOFF = "retry_exponential_backoff"
     RETRY_IMMEDIATE = "retry_immediate"
     FALLBACK_ALTERNATIVE = "fallback_alternative"
@@ -24,6 +37,14 @@ class RecoveryStrategy(Enum):
 
 @dataclass
 class ClassifiedError:
+    """ErrorClassifier 的输出。
+
+    Attributes:
+        category: 推断出的错误类别
+        strategy: 推荐的恢复策略
+        confidence: 分类置信度（0.0 - 1.0）
+        context: 附加上下文（工具名、错误片段等），方便 NudgeGenerator 定制提示
+    """
     category: ErrorCategory
     strategy: RecoveryStrategy
     confidence: float  # 0.0 - 1.0
@@ -31,9 +52,9 @@ class ClassifiedError:
 
 
 class ErrorClassifier:
-    """Classifies errors and recommends recovery strategies."""
+    """根据错误消息文本分类错误并推荐恢复策略。"""
 
-    # Keyword patterns for each error category
+    # 各类错误的关键词模式（用于关键词匹配打分）
     PATTERNS = {
         ErrorCategory.NETWORK: [
             "connection", "timeout", "network", "refused", "unreachable",
@@ -56,7 +77,7 @@ class ErrorClassifier:
         ],
     }
 
-    # Strategy mapping based on category
+    # 类别 → 推荐策略的默认映射表
     STRATEGY_MAP = {
         ErrorCategory.NETWORK: RecoveryStrategy.RETRY_EXPONENTIAL_BACKOFF,
         ErrorCategory.TIMEOUT: RecoveryStrategy.WAIT_AND_RETRY,
@@ -68,7 +89,11 @@ class ErrorClassifier:
 
     @classmethod
     def classify(cls, error_message: str, tool_name: str = "") -> ClassifiedError:
-        """Classify an error message and recommend a strategy."""
+        """对一条错误消息分类，并推荐恢复策略。
+
+        算法：把消息小写后与各类别的关键词列表做包含计数；选得分最高的类别。
+        无任何匹配时归为 UNKNOWN，置信度 0.3。
+        """
         error_lower = error_message.lower()
 
         scores: dict[ErrorCategory, int] = {}
@@ -86,7 +111,7 @@ class ErrorClassifier:
 
         strategy = cls.STRATEGY_MAP.get(best_category, RecoveryStrategy.RETRY_IMMEDIATE)
 
-        # Adjust strategy based on tool name
+        # 工具特化：只读工具遇到 LOGIC 错（如文件不存在）直接跳过即可，无需重试
         if tool_name in ["read_file", "list_files", "grep_files"] and best_category == ErrorCategory.LOGIC:
             strategy = RecoveryStrategy.SKIP_AND_CONTINUE
 
@@ -99,8 +124,13 @@ class ErrorClassifier:
 
 
 class NudgeGenerator:
-    """Generates intelligent nudge messages based on failure context."""
+    """根据失败上下文为 LLM 生成"推一把"消息（nudge）。
 
+    nudge 文本会作为 user 消息插入对话，提示模型采取下一步行动。所有模板均为
+    英文，是为了与 LLM 训练分布对齐、避免模型行为偏移，**不翻译**。
+    """
+
+    # 各 (category, strategy) 组合下发给 LLM 的英文模板（保留英文，原文影响模型行为）
     TEMPLATES = {
         ErrorCategory.NETWORK: {
             RecoveryStrategy.RETRY_EXPONENTIAL_BACKOFF: (
@@ -159,22 +189,27 @@ class NudgeGenerator:
 
     @classmethod
     def generate(cls, classified_error: ClassifiedError, retry_count: int = 0) -> str:
-        """Generate a nudge message based on classified error."""
+        """根据分类结果生成 nudge 消息。
+
+        会在基础模板上追加：
+            - 当前是第几次重试
+            - 工具特定的额外提示（如 ``run_command`` 遇 PERMISSION 提示 sudo 需用户批准）
+        """
         category = classified_error.category
         strategy = classified_error.strategy
 
-        # Get base template
+        # 查模板（找不到则退到 UNKNOWN/RETRY_IMMEDIATE 的兜底）
         category_templates = cls.TEMPLATES.get(category, cls.TEMPLATES[ErrorCategory.UNKNOWN])
         base_message = category_templates.get(
             strategy,
             category_templates.get(RecoveryStrategy.RETRY_IMMEDIATE, "Please retry."),
         )
 
-        # Add retry context
+        # 追加重试次数
         if retry_count > 0:
             base_message += f" (This is retry attempt {retry_count + 1})"
 
-        # Add tool-specific hints
+        # 工具特定提示
         tool_name = classified_error.context.get("tool_name", "")
         if tool_name == "run_command" and category == ErrorCategory.PERMISSION:
             base_message += " For command execution, consider using 'sudo' only if explicitly approved by the user."
@@ -185,7 +220,14 @@ class NudgeGenerator:
 
     @classmethod
     def generate_progress_nudge(cls, tool_results: list[tuple[str, bool]]) -> str | None:
-        """Generate a nudge when tools have been executed but model returns empty/progress."""
+        """当模型在工具执行后返回空/进度消息时，根据成败统计推一把。
+
+        Args:
+            tool_results: ``[(tool_name, success), ...]`` 列表
+
+        Returns:
+            英文 nudge 文本；列表为空时返回 None。
+        """
         if not tool_results:
             return None
 
@@ -210,32 +252,39 @@ class NudgeGenerator:
 
 
 class ToolScheduler:
-    """Intelligently schedules tool execution based on historical performance."""
+    """根据历史性能与并发安全性，智能编排工具调用顺序。
+
+    核心思路：
+        - 不安全的工具串行
+        - 历史可靠性高的工具优先并发
+        - 已知有过冲突的工具对避免再次同时执行
+    """
 
     def __init__(self, metrics_collector: "AgentMetricsCollector | None" = None):
         self._metrics = metrics_collector
-        self._conflict_history: dict[frozenset[str], int] = {}  # Track tool pair conflicts
+        # 记录工具对的冲突次数：frozenset({tool_a, tool_b}) -> 冲突次数
+        self._conflict_history: dict[frozenset[str], int] = {}
 
     def schedule_calls(self, calls: list[dict], tools: Any) -> tuple[list[dict], list[dict]]:
-        """Partition calls into concurrent and serial batches based on intelligence.
+        """把一批工具调用分成"可并发"与"必须串行"两组。
 
         Returns:
-            Tuple of (concurrent_calls, serial_calls)
+            ``(concurrent_calls, serial_calls)`` 元组。
         """
         if len(calls) <= 1:
             return calls, []
 
-        # Score each call based on historical success rate
+        # 按历史成功率给每个调用打分
         scored_calls: list[tuple[float, dict]] = []
         for call in calls:
             tool_name = call["toolName"]
             score = self._get_tool_score(tool_name)
             scored_calls.append((score, call))
 
-        # Sort by score (highest first = most reliable)
+        # 分数高的优先（更可靠的工具优先并发）
         scored_calls.sort(key=lambda x: x[0], reverse=True)
 
-        # Identify conflicting tool pairs
+        # 识别会冲突的工具对
         concurrent_calls: list[dict] = []
         serial_calls: list[dict] = []
 
@@ -247,7 +296,7 @@ class ToolScheduler:
                 serial_calls.append(call)
                 continue
 
-            # Check if this tool conflicts with already-selected concurrent tools
+            # 与已选的并发工具是否冲突
             conflicts = self._has_conflicts(tool_name, concurrent_calls)
             if conflicts:
                 serial_calls.append(call)
@@ -257,41 +306,45 @@ class ToolScheduler:
         return concurrent_calls, serial_calls
 
     def _get_tool_score(self, tool_name: str) -> float:
-        """Get reliability score for a tool (0.0 - 1.0)."""
+        """取工具的可靠性分数（0.0 - 1.0）。无 metrics 时默认 1.0。"""
         if self._metrics is None:
             return 1.0
         stats = self._metrics.get_tool_stats(tool_name)
         return stats.success_rate
 
     def _has_conflicts(self, tool_name: str, concurrent_calls: list[dict]) -> bool:
-        """Check if tool has known conflicts with concurrent calls."""
+        """判断 tool_name 是否与已选并发组中的某个工具有过冲突历史。"""
         for other_call in concurrent_calls:
             other_name = other_call["toolName"]
             pair = frozenset({tool_name, other_name})
             conflict_count = self._conflict_history.get(pair, 0)
-            if conflict_count >= 2:  # Known conflict threshold
+            if conflict_count >= 2:  # 已知冲突的阈值
                 return True
         return False
 
     def record_conflict(self, tool1: str, tool2: str) -> None:
-        """Record that two tools had a conflict when run concurrently."""
+        """记录两个工具在并发执行时发生了冲突，用于后续调度避让。"""
         pair = frozenset({tool1, tool2})
         self._conflict_history[pair] = self._conflict_history.get(pair, 0) + 1
 
     def get_recommended_max_workers(self, concurrent_calls: list[dict]) -> int:
-        """Recommend max workers based on call characteristics."""
+        """根据并发批的特征推荐线程池大小（1 ~ 8）。
+
+        - 含写文件类工具时上限收紧到 4
+        - 含命令执行类工具时进一步收紧到 3
+        """
         if not concurrent_calls:
             return 1
 
         base = min(len(concurrent_calls), 8)
 
-        # Reduce workers if we have file write operations
+        # 含文件写入类工具 → 限制并发，避免文件锁/竞争
         write_tools = {"write_file", "edit_file", "patch_file", "modify_file"}
         write_count = sum(1 for c in concurrent_calls if c["toolName"] in write_tools)
         if write_count > 0:
             base = min(base, 4)
 
-        # Reduce further if we have command executions
+        # 含命令执行类工具 → 进一步限制
         command_tools = {"run_command", "execute_command", "bash"}
         cmd_count = sum(1 for c in concurrent_calls if c["toolName"] in command_tools)
         if cmd_count > 0:

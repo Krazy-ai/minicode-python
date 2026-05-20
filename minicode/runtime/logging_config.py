@@ -1,10 +1,10 @@
-"""Logging configuration for MiniCode Python.
+"""MiniCode 的日志配置。
 
-Provides structured logging with:
+提供结构化日志，特性包括：
 - 分级日志（DEBUG/INFO/WARNING/ERROR）
 - 控制台和文件输出
 - 日志轮转（按大小 + 按时间，防止无限增长）
-- 结构化 JSON 日志（可选，便于机器解析）
+- 可选的结构化 JSON 日志（便于机器解析）
 - 关键路径日志点（API 调用、工具执行、权限检查）
 """
 

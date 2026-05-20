@@ -9,10 +9,10 @@ from typing import Any, Callable, Literal
 
 from minicode.config import MINI_CODE_PERMISSIONS_PATH
 
-# Auto mode integration
+# 接入 Auto 模式
 from minicode.security.auto_mode import AutoModeChecker, PermissionMode, RiskLevel, get_checker, get_mode_state
 
-# 权限决策类型 — 对齐 TS 版 PermissionDecision
+# 权限决策类型 — 与 TS 版 PermissionDecision 对齐
 PermissionDecision = Literal[
     "allow_once",
     "allow_always",
@@ -27,12 +27,12 @@ PromptHandler = Callable[[dict[str, Any]], dict[str, Any]]
 
 
 # ---------------------------------------------------------------------------
-# Path normalization with LRU cache
+# 路径归一化（带 LRU 缓存）
 # ---------------------------------------------------------------------------
 
-# LRU cache for _normalize_path — this is called on every permission check
-# and Path.resolve() is expensive (stat syscall per path component).
-# Typical session: hundreds of checks on ~50 unique paths.
+# 路径归一化在每次权限检查时都会被调用，
+# Path.resolve() 会触发 stat 系统调用，开销较大；
+# 一次会话通常对相同路径检查上百次，因此用 LRU 缓存。
 _CACHE_MAX_SIZE = 512
 
 _normalize_path_cached = lru_cache(maxsize=_CACHE_MAX_SIZE)(
@@ -41,30 +41,26 @@ _normalize_path_cached = lru_cache(maxsize=_CACHE_MAX_SIZE)(
 
 
 def _normalize_path(target_path: str) -> str:
-    """Normalize a path with caching. Resolves symlinks and normalizes separators.
-    
-    Cached to avoid redundant Path.resolve() syscalls — the same paths are
-    checked repeatedly (e.g., workspace root on every tool call).
+    """带缓存的路径归一化，会解析符号链接并统一分隔符。
+
+    缓存可避免重复的 Path.resolve()：
+    同一路径常被反复检查（如每次工具调用都验证 workspace root）。
     """
     return _normalize_path_cached(target_path)
 
 
-# Pre-computed result for the workspace root check (most common case)
-# This avoids calling _is_within_directory for the trivial case.
+# 工作区根目录的快速判断结果会被缓存，绕开 _is_within_directory 的开销
 _is_win = sys.platform == "win32"
 
 
 def _is_within_directory(root: str, target: str) -> bool:
-    """Check if target is within root directory.
-    
-    On Windows, uses case-insensitive comparison since NTFS paths are
-    case-insensitive by default.
-    
-    Both root and target should be pre-normalized (resolved) for
-    correct comparison.
+    """检查 target 是否位于 root 目录之内。
+
+    Windows 下使用大小写不敏感比较（NTFS 默认大小写不敏感）。
+    传入的 root 与 target 都应已归一化。
     """
     if _is_win:
-        # Windows: case-insensitive path comparison
+        # Windows：大小写不敏感比较
         target_str = target.lower()
         root_str = root.lower().rstrip("\\/")
         return (
@@ -73,16 +69,15 @@ def _is_within_directory(root: str, target: str) -> bool:
             or target_str.startswith(root_str + "/")
         )
     
-    # Unix: direct string comparison (paths already normalized)
+    # Unix：直接字符串比较（路径已归一化）
     root_str = root.rstrip(os.sep)
     return target == root_str or target.startswith(root_str + os.sep)
 
 
 def _matches_directory_prefix(target_path: str, directories: set[str]) -> bool:
-    """Check if target matches any directory prefix.
-    
-    Optimized: sorts directories by length (most specific first)
-    and short-circuits on first match.
+    """判断 target 是否匹配任意目录前缀。
+
+    优化：按长度排序（最具体的优先），首个命中即短路。
     """
     for directory in directories:
         if _is_within_directory(directory, target_path):
@@ -470,12 +465,12 @@ class PermissionManager:
 
 
 class PermissionGate:
-    """Explicit permission gate for critical actions.
+    """关键操作的显式权限门。
 
-    Provides a declarative way to check permissions before executing
-    high-risk operations (file writes, command execution, network requests).
+    在执行高风险操作（写文件、执行命令、网络请求）前，
+    用更声明式的方式集中检查权限。
 
-    Usage:
+    用法示例：
         gate = PermissionGate(permissions, cwd)
         gate.check_file_write("src/main.py")
         gate.check_command_run("rm -rf /tmp")
@@ -490,17 +485,17 @@ class PermissionGate:
         self.cwd = cwd
 
     def check_path_access(self, target_path: str, intent: str) -> None:
-        """Gate for path access (read/write/list/search)."""
+        """路径访问的入口（read/write/list/search）。"""
         self.permissions.ensure_path_access(target_path, intent)
 
     def check_file_write(self, target_path: str) -> None:
-        """Gate specifically for file write operations."""
+        """专门用于文件写入的入口。"""
         self.check_path_access(target_path, "write")
 
     def check_command_run(self, command: str, args: list[str]) -> None:
-        """Gate for command execution."""
+        """命令执行入口。"""
         self.permissions.ensure_command(command, args, self.cwd)
 
     def check_file_edit(self, target_path: str, diff_preview: str) -> None:
-        """Gate for file edit operations with diff preview."""
+        """带 diff 预览的文件编辑入口。"""
         self.permissions.ensure_edit(target_path, diff_preview)

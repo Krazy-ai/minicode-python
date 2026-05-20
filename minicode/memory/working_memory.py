@@ -1,14 +1,14 @@
-"""Working memory protection for context compaction.
+"""上下文压缩过程中的工作记忆保护。
 
-Inspired by Learn Claude Code best practices:
-- Preserve key continuity information during context compression
-- Protect active task context from being summarized away
-- Maintain conversation flow continuity across compaction boundaries
+借鉴 Learn Claude Code 的最佳实践：
+- 在压缩上下文时保留关键的连续性信息
+- 防止活跃任务的关键上下文被摘要掉
+- 跨压缩边界保持对话流的连续性
 
-Provides:
-- WorkingMemoryTracker: Tracks and protects critical context
-- ContinuityMarker: Marks important conversation flow points
-- MemoryBudgetAllocator: Allocates token budget for working memory
+提供：
+- WorkingMemoryTracker：跟踪并保护关键上下文
+- ContinuityMarker：标记重要的对话流转折点
+- MemoryBudgetAllocator：为工作记忆分配 token 预算
 """
 
 from __future__ import annotations
@@ -22,32 +22,31 @@ from minicode.memory.context_manager import estimate_tokens
 
 @dataclass
 class WorkingMemoryEntry:
-    """A single working memory entry that should be protected during compaction."""
+    """单条工作记忆，压缩时应当被保护。"""
 
     content: str
-    entry_type: str  # "active_task", "user_intent", "key_decision", "error_context"
+    entry_type: str  # active_task / user_intent / key_decision / error_context
     created_at: float = field(default_factory=time.time)
-    expires_at: float | None = None  # None = no expiry
-    importance: float = 1.0  # 0.0 - 1.0, higher = more protected
+    expires_at: float | None = None  # None 表示永不过期
+    importance: float = 1.0  # 0.0 - 1.0，越高越重要
 
     def is_expired(self) -> bool:
-        """Check if this entry has expired."""
+        """该记忆是否已过期。"""
         if self.expires_at is None:
             return False
         return time.time() > self.expires_at
 
     def token_count(self) -> int:
-        """Estimate token count for this entry."""
+        """估算该记忆的 token 数。"""
         return estimate_tokens(self.content)
 
 
 class WorkingMemoryTracker:
-    """Tracks and protects critical context during compaction.
+    """跟踪并保护压缩过程中应保留的关键上下文。
 
-    This implements the "working memory protection" pattern from
-    Learn Claude Code best practices. During context compression,
-    entries in this tracker are preserved to maintain conversation
-    continuity and task coherence.
+    实现 Learn Claude Code 中提到的「工作记忆保护」模式：
+    上下文压缩时，本跟踪器中的条目会被保留，
+    以维持对话连续性与任务一致性。
     """
 
     def __init__(
@@ -66,13 +65,13 @@ class WorkingMemoryTracker:
         ttl_seconds: float | None = None,
         importance: float = 1.0,
     ) -> WorkingMemoryEntry:
-        """Add a working memory entry to be protected.
+        """添加一条受保护的工作记忆。
 
-        Args:
-            content: The content to protect
-            entry_type: Type of working memory (active_task, user_intent, etc.)
-            ttl_seconds: Time-to-live in seconds (None = no expiry)
-            importance: Importance score 0.0-1.0 (higher = more protected)
+        参数：
+            content: 待保护的内容
+            entry_type: 工作记忆类型（active_task / user_intent 等）
+            ttl_seconds: 存活时间（秒，None 表示永不过期）
+            importance: 重要度 0.0~1.0（越大越受保护）
         """
         expires_at = None
         if ttl_seconds is not None:
@@ -90,27 +89,27 @@ class WorkingMemoryTracker:
         return entry
 
     def remove(self, entry: WorkingMemoryEntry) -> None:
-        """Remove a working memory entry."""
+        """移除指定的工作记忆。"""
         if entry in self._entries:
             self._entries.remove(entry)
 
     def clear_expired(self) -> int:
-        """Remove all expired entries. Returns count removed."""
+        """清理所有过期条目，返回被清理的数量。"""
         before = len(self._entries)
         self._entries = [e for e in self._entries if not e.is_expired()]
         return before - len(self._entries)
 
     def get_protected_content(self) -> list[str]:
-        """Get all non-expired content that should be protected."""
+        """获取所有未过期的受保护内容。"""
         self.clear_expired()
         return [e.content for e in self._entries]
 
     def get_protected_tokens(self) -> int:
-        """Get total token count of protected content."""
+        """统计所有受保护内容的总 token 数。"""
         return sum(e.token_count() for e in self._entries if not e.is_expired())
 
     def get_stats(self) -> dict[str, Any]:
-        """Get working memory statistics."""
+        """获取工作记忆统计信息。"""
         self.clear_expired()
         return {
             "entries": len(self._entries),
@@ -123,23 +122,23 @@ class WorkingMemoryTracker:
         }
 
     def _enforce_limits(self) -> None:
-        """Remove lowest-priority entries if exceeding limits."""
-        # Remove expired first
+        """超出限制时移除优先级最低的条目。"""
+        # 先清理过期项
         self.clear_expired()
 
-        # Remove by token budget
+        # 再按 token 预算裁剪
         while self.get_protected_tokens() > self.max_tokens and self._entries:
-            # Remove lowest importance entry
+            # 删除重要度最低的条目
             self._entries.sort(key=lambda e: e.importance)
             self._entries.pop(0)
 
-        # Remove by entry count
+        # 最后按条目数量裁剪
         while len(self._entries) > self.max_entries and self._entries:
             self._entries.sort(key=lambda e: e.importance)
             self._entries.pop(0)
 
     def format_status(self) -> str:
-        """Format working memory status for display."""
+        """格式化工作记忆状态用于展示。"""
         stats = self.get_stats()
         lines = [
             "Working Memory",
@@ -167,23 +166,23 @@ class WorkingMemoryTracker:
 
 @dataclass
 class ContinuityMarker:
-    """Marks important conversation flow points.
+    """标记对话流中的重要转折点。
 
-    During compaction, these markers help reconstruct the
-    conversation narrative even after messages are summarized.
+    上下文被压缩后，借助这些标记可以
+    在消息被摘要后仍然还原对话脉络。
     """
 
-    marker_type: str  # "task_start", "decision_point", "error_recovered", "user_redirect"
+    marker_type: str  # task_start / decision_point / error_recovered / user_redirect
     description: str
     timestamp: float = field(default_factory=time.time)
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class ConversationContinuityManager:
-    """Manages conversation continuity across compaction boundaries.
+    """跨压缩边界维护对话连续性。
 
-    When context is compacted, this manager helps reconstruct the
-    conversation flow by preserving key transition points.
+    上下文被压缩时，通过保存关键转折点，
+    本管理器帮助恢复对话脉络。
     """
 
     def __init__(self, max_markers: int = 20) -> None:
@@ -196,7 +195,7 @@ class ConversationContinuityManager:
         description: str,
         metadata: dict[str, Any] | None = None,
     ) -> ContinuityMarker:
-        """Add a continuity marker."""
+        """添加一个连续性标记。"""
         marker = ContinuityMarker(
             marker_type=marker_type,
             description=description,
@@ -204,27 +203,27 @@ class ConversationContinuityManager:
         )
         self._markers.append(marker)
 
-        # Enforce limit
+        # 数量上限保护
         if len(self._markers) > self.max_markers:
             self._markers = self._markers[-self.max_markers:]
 
         return marker
 
     def get_recent_markers(self, limit: int = 10) -> list[ContinuityMarker]:
-        """Get recent continuity markers."""
+        """获取最近的连续性标记。"""
         return self._markers[-limit:]
 
     def get_markers_since(self, timestamp: float) -> list[ContinuityMarker]:
-        """Get markers added after a specific timestamp."""
+        """获取指定时间之后添加的标记。"""
         return [m for m in self._markers if m.timestamp > timestamp]
 
     def format_continuity_summary(self) -> str:
-        """Format conversation continuity for display."""
+        """格式化对话连续性摘要用于展示。"""
         if not self._markers:
             return "No continuity markers."
 
         lines = ["Conversation Continuity", "=" * 50, ""]
-        for marker in self._markers[-10:]:  # Last 10 markers
+        for marker in self._markers[-10:]:  # 最近 10 条
             time_str = time.strftime("%H:%M:%S", time.localtime(marker.timestamp))
             lines.append(f"  [{time_str}] [{marker.marker_type}] {marker.description}")
 
@@ -232,7 +231,7 @@ class ConversationContinuityManager:
 
 
 # ---------------------------------------------------------------------------
-# Module-level singletons
+# 模块级单例
 # ---------------------------------------------------------------------------
 
 _working_memory = WorkingMemoryTracker()
@@ -240,12 +239,12 @@ _continuity_manager = ConversationContinuityManager()
 
 
 def get_working_memory() -> WorkingMemoryTracker:
-    """Get the global working memory tracker."""
+    """获取全局工作记忆跟踪器。"""
     return _working_memory
 
 
 def get_continuity_manager() -> ConversationContinuityManager:
-    """Get the global conversation continuity manager."""
+    """获取全局对话连续性管理器。"""
     return _continuity_manager
 
 
@@ -254,7 +253,7 @@ def protect_context(
     entry_type: str = "active_task",
     ttl_seconds: float | None = None,
 ) -> WorkingMemoryEntry:
-    """Convenience function to protect context during compaction."""
+    """便捷函数：在压缩过程中保护一段上下文。"""
     return _working_memory.add(content, entry_type, ttl_seconds)
 
 
@@ -263,5 +262,5 @@ def mark_continuity(
     description: str,
     metadata: dict[str, Any] | None = None,
 ) -> ContinuityMarker:
-    """Convenience function to add a continuity marker."""
+    """便捷函数：添加一个连续性标记。"""
     return _continuity_manager.add_marker(marker_type, description, metadata)

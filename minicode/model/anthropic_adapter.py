@@ -25,7 +25,7 @@ def _get_retry_limit() -> int:
 
 
 def _parse_retry_after_seconds(retry_after: str | None) -> float | None:
-    """Parse Retry-After header into seconds."""
+    """将 Retry-After 响应头解析为秒数。"""
     if not retry_after:
         return None
     try:
@@ -130,15 +130,17 @@ def _to_anthropic_messages(messages: list[dict[str, Any]]) -> tuple[str, list[di
 
 
 class AnthropicModelAdapter:
+    """Anthropic Messages API 模型适配器。"""
+
     def __init__(self, runtime: dict[str, Any], tools) -> None:
         self.runtime = runtime
         self.tools = tools
-        # Cache the serialized tool list — tools rarely change within a session
+        # 缓存序列化后的工具列表 —— 同一会话内工具基本不会变化
         self._cached_tools_json: list[dict[str, Any]] | None = None
-        self._tools_cache_key: int = 0  # hash of tool list for invalidation
+        self._tools_cache_key: int = 0  # 工具列表 hash，用于失效校验
 
     def _get_serialized_tools(self) -> list[dict[str, Any]]:
-        """Get serialized tool list with caching."""
+        """获取序列化后的工具列表（带缓存）。"""
         current_tools = self.tools.list()
         current_key = hash(tuple((t.name, t.description) for t in current_tools))
         if self._cached_tools_json is None or current_key != self._tools_cache_key:
@@ -211,9 +213,9 @@ class AnthropicModelAdapter:
                     store.set_state(record_api_error())
                 raise RuntimeError(_extract_error_message(data, status))
     
-            # Update store with API call success and cost tracking
+            # 调用成功后写入 store 并记录成本
             if store:
-                # Calculate token usage and cost (with cache support)
+                # 计算 token 使用量和成本（含 prompt cache）
                 from minicode.runtime.cost_tracker import calculate_cost
                 usage = data.get("usage", {})
                 input_tokens = usage.get("input_tokens", 0)
@@ -231,7 +233,7 @@ class AnthropicModelAdapter:
                 if cost_usd > 0:
                     store.set_state(add_cost(cost_usd))
                 
-                # Update context usage
+                # 更新上下文使用率
                 total_tokens = input_tokens + output_tokens
                 store.set_state(update_context_usage(total_tokens))
     
@@ -267,7 +269,7 @@ class AnthropicModelAdapter:
                 )
             return AgentStep(type="assistant", content=parsed_text, kind=kind, diagnostics=diagnostics)
 
-        # STREAMING PARSER
+        # 流式响应解析
         tool_calls = []
         text_parts = []
         block_types = []
@@ -275,7 +277,7 @@ class AnthropicModelAdapter:
         active_tool_call = None
         stop_reason = None
         
-        # Streaming cost tracking
+        # 流式响应的成本统计
         stream_input_tokens = 0
         stream_output_tokens = 0
         stream_cache_read_tokens = 0
@@ -295,7 +297,7 @@ class AnthropicModelAdapter:
                 
             etype = event.get("type")
             if etype == "message_start":
-                # Initial usage from message_start
+                # message_start 事件携带初始 usage 信息
                 msg = event.get("message", {})
                 usage = msg.get("usage", {})
                 stream_input_tokens = usage.get("input_tokens", 0)
@@ -337,7 +339,7 @@ class AnthropicModelAdapter:
                 delta = event.get("delta", {})
                 if "stop_reason" in delta:
                     stop_reason = delta["stop_reason"]
-                # Final output tokens from message_delta
+                # message_delta 事件携带最终 output_tokens
                 usage = event.get("usage", {})
                 if usage.get("output_tokens"):
                     stream_output_tokens = usage["output_tokens"]
@@ -345,7 +347,7 @@ class AnthropicModelAdapter:
                 err = event.get("error", {})
                 raise RuntimeError(f"Streaming error: {err.get('message', 'Unknown')}")
         
-        # Update store with streaming cost tracking
+        # 流式响应结束后写入 store 并记录成本
         if store:
             from minicode.runtime.cost_tracker import calculate_cost
             cost_usd = calculate_cost(

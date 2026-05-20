@@ -1,17 +1,17 @@
-"""Terminal markdown renderer with syntax highlighting for code blocks.
+"""带代码语法高亮的终端 Markdown 渲染器。
 
-Provides rich rendering of markdown content in the terminal:
-- Headings with visual hierarchy
-- Code blocks with basic syntax highlighting
-- Inline code with background color
-- Bold, italic, strikethrough
-- Lists with colored bullets/numbers
-- Blockquotes with visual bars
-- Tables with aligned columns
-- Horizontal rules
-- Links with underline
+在终端中提供较丰富的 Markdown 渲染：
+- 多级标题
+- 带基础语法高亮的代码块
+- 带背景色的行内代码
+- 粗体、斜体、删除线
+- 带颜色标号的列表
+- 带视觉竖线的引用块
+- 列对齐的表格
+- 水平分隔线
+- 带下划线的链接
 
-Inspired by Claude Code's markdown rendering quality.
+风格参考自 Claude Code。
 """
 from __future__ import annotations
 

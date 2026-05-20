@@ -1,3 +1,17 @@
+"""MCP（Model Context Protocol）协议集成。
+
+实现了一个最小但安全的 stdio MCP 客户端：
+    - 启动外部 MCP 服务器子进程（通过白名单命令防止任意命令执行）
+    - 协商 framing 协议（content-length 头 / newline-json）
+    - 把远端 tools / resources / prompts 包装成本地 ToolDefinition 与上下文
+    - 懒加载：第一次真正需要时才启动服务器，降低 MiniCode 启动开销
+
+安全设计：
+    - ALLOWED_COMMANDS 白名单：禁止 sh / bash / cmd 等任意 shell
+    - DANGEROUS_SHELL_CHARS：参数中出现 ``| & ; ` $ () {} <> \\n \\r`` 直接拒绝
+    - MAX_MCP_PAYLOAD_BYTES：50MB 上限防 OOM
+    - 子进程 stdin/stdout 二进制管道，stderr 收集到 ``stderr_lines`` 便于诊断
+"""
 from __future__ import annotations
 
 import json
@@ -30,6 +44,7 @@ JsonRpcProtocol = str
 
 @dataclass(slots=True)
 class McpServerSummary:
+    """单个 MCP 服务器的运行摘要（供 ``/mcp`` 命令展示与状态面板使用）。"""
     name: str
     command: str
     status: str
@@ -41,6 +56,7 @@ class McpServerSummary:
 
 
 def _sanitize_tool_segment(value: str) -> str:
+    """把任意字符串规范成只含 ``[a-z0-9_-]`` 的工具名片段。"""
     normalized = "".join(char.lower() if char.isalnum() or char in {"_", "-"} else "_" for char in value)
     normalized = normalized.strip("_")
     return normalized or "tool"
@@ -71,10 +87,10 @@ def _validate_mcp_command(command: str) -> None:
             # macOS Homebrew
             '/opt/homebrew/bin', '/opt/homebrew/sbin',  # Apple Silicon
             '/usr/local/Cellar',  # Intel
-            # Linux extras
+            # Linux 上常见的额外路径
             '/snap/bin',  # Ubuntu Snap
             '/home/linuxbrew/.linuxbrew/bin',  # Homebrew on Linux
-            # User-level tool directories (pip --user, pipx, cargo, nvm, etc.)
+            # 用户级工具目录（pip --user / pipx / cargo / nvm 等）
             f'{home_posix}/.local/bin',
             f'{home_posix}/.cargo/bin',
             f'{home_posix}/.nvm',
@@ -194,11 +210,10 @@ def _format_prompt_result(result: Any) -> ToolResult:
 
 
 class StdioMcpClient:
-    """MCP client with lazy initialization.
-    
-    The server process is not started until the first request is made,
-    reducing startup time and resource usage when MCP servers are configured
-    but not immediately needed.
+    """带懒加载的 MCP 客户端。
+
+    服务器子进程会在首次发起请求时才启动，避免配置了多个 MCP 但实际没用到时
+    白白消耗启动时间和系统资源。
     """
     def __init__(self, server_name: str, config: dict[str, Any], cwd: str) -> None:
         self.server_name = server_name
@@ -212,7 +227,7 @@ class StdioMcpClient:
         self.stderr_lines: list[str] = []
         self._stderr_thread: threading.Thread | None = None
         self._stdout_thread: threading.Thread | None = None
-        # Lazy init state
+        # 懒加载相关状态
         self._started = False
         self._start_error: str | None = None
         self._tools_cache: list[dict[str, Any]] | None = None
@@ -236,16 +251,16 @@ class StdioMcpClient:
         return ["content-length", "newline-json"]
 
     def start(self) -> None:
-        """Start the MCP server process (idempotent).
-        
-        If already started, returns immediately.
-        If previously failed, retries the connection.
+        """启动 MCP 服务器子进程（幂等）。
+
+        - 已启动则立即返回
+        - 上次启动失败时会重试一次
         """
         if self._started:
             return
-        
+
         if self._start_error is not None and self.process is None:
-            # Previous attempt failed — reset for retry
+            # 上次启动失败 —— 重置状态以便重试
             self._start_error = None
         
         last_error: Exception | None = None
@@ -274,7 +289,7 @@ class StdioMcpClient:
         raise RuntimeError(self._start_error)
     
     def _ensure_started(self) -> None:
-        """Ensure the server is started before making a request."""
+        """发起请求前确保服务器已启动（首次调用时触发懒启动）。"""
         if self._started and not self._is_process_alive():
             self.close()
         if not self._started:
@@ -301,7 +316,7 @@ class StdioMcpClient:
 
         popen_kwargs: dict = {}
         if os.name == "nt":
-            # Prevent a console window from popping up for the child process
+            # 在 Windows 下避免子进程弹出独立的命令行窗口
             CREATE_NO_WINDOW = 0x08000000
             popen_kwargs["creationflags"] = CREATE_NO_WINDOW
         try:
@@ -364,7 +379,7 @@ class StdioMcpClient:
                     )
                     continue
 
-                # Auto-detect protocol if not determined yet
+                # 协议尚未确定时自动嗅探
                 if self.protocol is None:
                     if line.lower().startswith("content-length:"):
                         self.protocol = "content-length"
@@ -377,8 +392,8 @@ class StdioMcpClient:
                     except json.JSONDecodeError:
                         continue
                 else:
-                    # Content-length protocol
-                    # The current 'line' is the first header line
+                    # content-length 协议
+                    # 当前 'line' 是首个 header 行
                     header_lines = [line.rstrip("\r\n")]
                     while True:
                         next_line_bytes = self.process.stdout.readline()
@@ -417,7 +432,7 @@ class StdioMcpClient:
                         except (json.JSONDecodeError, UnicodeDecodeError):
                             pass
         finally:
-            # Bug 2: Notify pending requests when process exits
+            # Bug 2 修复：进程退出时通知所有 pending 请求，避免永久阻塞
             if self.process:
                 exit_code = self.process.poll()
                 error_msg = {"error": {"code": -1, "message": f"MCP server process exited (code={exit_code})"}}
@@ -478,7 +493,7 @@ class StdioMcpClient:
         return message.get("result")
 
     def list_tools(self) -> list[dict[str, Any]]:
-        """List tools with caching. Starts server lazily if not started."""
+        """带缓存地列出 tools。未启动则懒启动。"""
         if self._tools_cache is not None:
             return self._tools_cache
         self._ensure_started()
@@ -487,7 +502,7 @@ class StdioMcpClient:
         return self._tools_cache
 
     def list_resources(self) -> list[dict[str, Any]]:
-        """List resources with caching. Starts server lazily if not started."""
+        """带缓存地列出 resources。未启动则懒启动。"""
         if self._resources_cache is not None:
             return self._resources_cache
         self._ensure_started()
@@ -500,7 +515,7 @@ class StdioMcpClient:
         return _format_read_resource_result(self.request("resources/read", {"uri": uri}, timeout_seconds=5.0))
 
     def list_prompts(self) -> list[dict[str, Any]]:
-        """List prompts with caching. Starts server lazily if not started."""
+        """带缓存地列出 prompts。未启动则懒启动。"""
         if self._prompts_cache is not None:
             return self._prompts_cache
         self._ensure_started()
@@ -570,7 +585,7 @@ class StdioMcpClient:
         self.protocol = None
         self._stdout_thread = None
         self._stderr_thread = None
-        # Reset lazy init state
+        # 重置懒加载状态
         self._started = False
         self._tools_cache = None
         self._resources_cache = None
@@ -604,7 +619,7 @@ def create_mcp_backed_tools(*, cwd: str, mcp_servers: dict[str, dict[str, Any]])
         client = StdioMcpClient(server_name, config, cwd)
         clients.append(client)
         
-        # Register server with "pending" status — will be connected lazily
+        # 先用 "pending" 状态注册 server，连接成功后再更新为 connected
         servers.append(
             asdict(
                 McpServerSummary(
@@ -617,16 +632,11 @@ def create_mcp_backed_tools(*, cwd: str, mcp_servers: dict[str, dict[str, Any]])
             )
         )
         
-        # Eagerly discover tools/resources/prompts on first use via
-        # the lazy client. Register placeholder tools now that will
-        # resolve to the actual MCP tool on first call.
-        # 
-        # We register a single "gateway" tool per server that triggers
-        # lazy init, plus we'll discover and register actual tools
-        # after the first successful connection.
-        # 
-        # For simplicity, we still try to discover tools at creation
-        # time but don't fail if the server can't start yet.
+        # 通过懒客户端积极发现 tools / resources / prompts，
+        # 现在就注册占位工具，首次真正调用时才解析为真实 MCP 工具。
+        #
+        # 实际是为每个 server 注册一个 "gateway" 工具触发懒启动；
+        # 我们仍在创建期试着发现真实工具，但即使 server 暂时启动不了也不报错。
         try:
             descriptors = client.list_tools()
             try:
@@ -664,7 +674,7 @@ def create_mcp_backed_tools(*, cwd: str, mcp_servers: dict[str, dict[str, Any]])
                     )
                 )
 
-            # Update server status to connected
+            # 把 server 状态更新为 connected
             for i, s in enumerate(servers):
                 if s["name"] == server_name:
                     servers[i] = asdict(
@@ -680,8 +690,8 @@ def create_mcp_backed_tools(*, cwd: str, mcp_servers: dict[str, dict[str, Any]])
                     )
                     break
         except Exception as error:  # noqa: BLE001
-            # Lazy init: don't fail — server will be retried on first tool call
-            # Just update status to reflect the error
+            # 懒启动模式下：失败不抛异常 —— 首次调用工具时会再次尝试
+            # 这里只把状态更新为错误以便 UI 反映
             for i, s in enumerate(servers):
                 if s["name"] == server_name:
                     servers[i] = asdict(

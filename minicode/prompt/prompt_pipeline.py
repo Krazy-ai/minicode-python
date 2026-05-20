@@ -1,14 +1,13 @@
-"""Dynamic prompt assembly pipeline for MiniCode Python.
+"""MiniCode 的 prompt 动态拼装管线。
 
-Implements paragraph-level assembly with cache boundaries and conditional
-sections, following the Learn Claude Code best practices.
+按段落组织 prompt，通过缓存边界与条件段实现高效复用，
+落地了 Learn Claude Code 的最佳实践。
 
-Key concepts:
-- SYSTEM_PROMPT_DYNAMIC_BOUNDARY: Separates static prefix (cacheable) from
-  dynamic suffix (session-specific). Enables cross-session API prompt caching.
-- PromptSection: Declarative paragraph registration with name, condition,
-  and builder attributes.
-- Paragraph-level cache: Avoids re-reading CLAUDE.md, skills, etc. every turn.
+核心概念：
+- SYSTEM_PROMPT_DYNAMIC_BOUNDARY：分隔静态前缀（可缓存）和动态后缀（按会话变化），
+  让 API 提供商可以做跨会话的 prompt cache。
+- PromptSection：以声明式方式注册段落，包含 name / condition / builder。
+- 段落级缓存：避免每次都重读 CLAUDE.md / skills 等。
 """
 
 from __future__ import annotations
@@ -19,33 +18,33 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-# Sentinel string marking the boundary between static and dynamic prompt parts.
-# API providers (Anthropic, OpenAI) use this to implement prompt caching.
+# 区分静态/动态段落的边界标记。
+# Anthropic / OpenAI 等 API 会基于该标记做 prompt cache。
 SYSTEM_PROMPT_DYNAMIC_BOUNDARY = "__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__"
 
 
 @dataclass
 class PromptSection:
-    """Declarative prompt paragraph with conditional inclusion and caching."""
+    """声明式的 prompt 段落，支持条件包含与缓存。"""
 
     name: str
     builder: Callable[[], str]
     condition: Callable[[], bool] | None = None
-    cache_ttl: float = 300.0  # 5 minutes default
+    cache_ttl: float = 300.0  # 默认 5 分钟
     _cached_value: str | None = field(default=None, repr=False)
     _cached_at: float = field(default=0.0, repr=False)
 
     def evaluate(self) -> str | None:
-        """Return the paragraph text if condition is met, else None."""
+        """若满足 condition 则返回段落文本，否则返回 None。"""
         if self.condition is not None and not self.condition():
             return None
 
-        # Check cache
+        # 命中缓存直接返回
         now = time.monotonic()
         if self._cached_value is not None and (now - self._cached_at) < self.cache_ttl:
             return self._cached_value
 
-        # Build and cache
+        # 重新构建并缓存
         text = self.builder()
         self._cached_value = text
         self._cached_at = now
@@ -53,9 +52,9 @@ class PromptSection:
 
 
 class PromptPipeline:
-    """Manages the lifecycle of prompt sections with cache boundaries.
+    """以缓存边界为核心的 prompt 段落生命周期管理。
 
-    Usage:
+    用法：
         pipeline = PromptPipeline()
         pipeline.register_static("role", "You are an AI assistant...")
         pipeline.register_dynamic(
@@ -71,12 +70,12 @@ class PromptPipeline:
         self._dynamic_sections: list[PromptSection] = []
 
     def register_static(self, name: str, text: str) -> None:
-        """Register a paragraph that never changes (fully cacheable)."""
+        """注册永不变化的段落（可完全缓存）。"""
         self._static_sections.append(
             PromptSection(
                 name=name,
                 builder=lambda: text,
-                cache_ttl=float("inf"),  # Never expires
+                cache_ttl=float("inf"),  # 永不过期
             )
         )
 
@@ -87,7 +86,7 @@ class PromptPipeline:
         condition: Callable[[], bool] | None = None,
         cache_ttl: float = 300.0,
     ) -> None:
-        """Register a paragraph that may change between turns."""
+        """注册可能在不同轮次间变化的段落。"""
         self._dynamic_sections.append(
             PromptSection(
                 name=name,
@@ -98,19 +97,19 @@ class PromptPipeline:
         )
 
     def build(self) -> str:
-        """Assemble the full system prompt with cache boundary marker."""
+        """组装出带缓存边界标记的完整 system prompt。"""
         parts: list[str] = []
 
-        # Static prefix (cacheable across turns/sessions)
+        # 静态前缀（跨轮次/跨会话可缓存）
         for section in self._static_sections:
             text = section.evaluate()
             if text:
                 parts.append(text)
 
-        # Dynamic boundary marker
+        # 动态边界标记
         parts.append(SYSTEM_PROMPT_DYNAMIC_BOUNDARY)
 
-        # Dynamic suffix (re-evaluated per turn)
+        # 动态后缀（每轮重建）
         for section in self._dynamic_sections:
             text = section.evaluate()
             if text:
@@ -119,23 +118,23 @@ class PromptPipeline:
         return "\n\n".join(p for p in parts if p)
 
     def clear_cache(self) -> None:
-        """Clear all paragraph caches (force rebuild on next build())."""
+        """清空所有段落的缓存（下次 build 时强制重算）。"""
         for section in self._static_sections + self._dynamic_sections:
             section._cached_value = None
             section._cached_at = 0.0
 
 
 # ---------------------------------------------------------------------------
-# File-based cache for expensive paragraph builders (CLAUDE.md, etc.)
+# 文件级缓存：用于昂贵的段落构建器（如 CLAUDE.md）
 # ---------------------------------------------------------------------------
 
 _file_cache: dict[str, tuple[str, float, float]] = {}
 
 
 def read_file_cached(path: Path, ttl: float = 300.0) -> str | None:
-    """Read a file with mtime-based caching.
+    """基于 mtime 的文件读取缓存。
 
-    Returns None if file doesn't exist.
+    文件不存在时返回 None。
     """
     key = str(path.resolve())
     try:
@@ -158,5 +157,5 @@ def read_file_cached(path: Path, ttl: float = 300.0) -> str | None:
 
 
 def content_hash(text: str) -> str:
-    """Compute a short content hash for cache invalidation."""
+    """计算用于缓存失效的简短内容哈希。"""
     return hashlib.sha256(text.encode()).hexdigest()[:12]

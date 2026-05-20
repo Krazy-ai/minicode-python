@@ -1,13 +1,13 @@
-"""Task tool — spawn a sub-agent to handle complex multi-step tasks.
+"""task 工具：派生子 agent 来处理复杂多步任务。
 
-Inspired by Claude Code's Task tool which launches an independent agent loop
-with its own context window, isolated from the main conversation.
+参考 Claude Code 的 Task 工具：启动一个拥有独立上下文窗口、
+与主会话隔离的 agent loop。
 
-The sub-agent runs a full agent loop (model + tools) with:
-- Its own system prompt tailored to the task type
-- A filtered tool set based on the agent type
-- A turn limit to prevent runaway execution
-- Result summarized back into the parent context
+子 agent 运行完整的 agent loop（model + tools），具备：
+- 针对任务类型定制的 system prompt
+- 按 agent 类型过滤后的工具集
+- 防止失控的轮次上限
+- 把最终结果摘要回主上下文
 """
 from __future__ import annotations
 

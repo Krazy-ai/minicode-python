@@ -1,7 +1,7 @@
-"""Cost and usage tracking for API calls.
+"""API 调用的成本与使用量跟踪。
 
-Tracks token usage, API costs, and code changes across the session.
-Inspired by Claude Code's cost-tracker.ts implementation.
+会话级别地跟踪 token 使用、API 成本与代码改动量，
+参考 Claude Code 中 cost-tracker.ts 的实现。
 """
 
 from __future__ import annotations

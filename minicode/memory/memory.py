@@ -1,14 +1,14 @@
-"""Layered memory system for cross-session knowledge retention.
+"""分层记忆系统：用于跨会话保留知识。
 
-Provides three-tier memory hierarchy:
-- User memory (~/.mini-code/memory/) - cross-project, persistent
-- Project memory (.mini-code-memory/) - shared across sessions, can be versioned
-- Local memory (.mini-code-memory-local/) - project-specific, not checked in
+提供三层记忆：
+- 用户级（~/.mini-code/memory/）：跨项目持久化
+- 项目级（.mini-code-memory/）：会话间共享，可纳入版本控制
+- 本地级（.mini-code-memory-local/）：项目内本地，不入版本库
 
-Memory is automatically injected into system prompts to give the agent
-context about past decisions, codebase patterns, and project conventions.
+记忆会自动注入到 system prompt，让 agent 了解过往决策、
+代码库模式与项目约定。
 
-Search uses TF-IDF relevance scoring for intelligent retrieval.
+检索使用 TF-IDF / BM25 相关性打分进行智能召回。
 """
 
 from __future__ import annotations
@@ -31,23 +31,23 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Memory data validation
+# 记忆数据校验
 # ---------------------------------------------------------------------------
 
 
 def _validate_memory_data(data: dict) -> tuple[bool, list[str]]:
-    """Validate the structure of memory JSON data before loading.
+    """加载记忆 JSON 之前对其结构做校验。
 
-    Checks for:
-    - Required fields present (entries)
-    - Valid enum values for scope
-    - Valid data types for all entry fields
+    校验内容：
+    - 必填字段（entries）是否存在
+    - scope 是否为合法枚举值
+    - 各字段类型是否合法
 
-    Args:
-        data: Parsed JSON data dictionary
+    参数：
+        data: 已解析的 JSON dict
 
-    Returns:
-        Tuple of (is_valid, list_of_errors)
+    返回：
+        (is_valid, errors) 元组。
     """
     errors: list[str] = []
 
@@ -71,10 +71,10 @@ def _validate_memory_data(data: dict) -> tuple[bool, list[str]]:
 
 
 def _validate_entry(entry: Any, index: int) -> tuple[bool, list[str]]:
-    """Validate a single memory entry dictionary.
+    """校验单条记忆的字段。
 
-    Returns:
-        Tuple of (is_valid, list_of_errors)
+    返回：
+        (is_valid, errors) 元组。
     """
     errors: list[str] = []
     prefix = f"Entry at index {index}"
@@ -132,20 +132,20 @@ def _validate_entry(entry: Any, index: int) -> tuple[bool, list[str]]:
 
 
 # ---------------------------------------------------------------------------
-# Corrupted data recovery
+# 损坏数据的恢复
 # ---------------------------------------------------------------------------
 
 def _recover_entries(data: dict, memory_json_path: Path) -> list[dict]:
-    """Attempt to recover valid entries from corrupted memory data.
+    """从损坏的记忆数据中尝试恢复合法条目。
 
-    Creates a backup of the corrupted file and returns only valid entries.
+    会先备份损坏文件，再仅返回校验通过的条目。
 
-    Args:
-        data: Parsed JSON data (may be partially corrupted)
-        memory_json_path: Path to the original memory.json file
+    参数：
+        data: 已解析的（可能部分损坏的）JSON dict
+        memory_json_path: 原始 memory.json 路径
 
-    Returns:
-        List of valid entry dictionaries
+    返回：
+        合法条目的 dict 列表。
     """
     backup_path = memory_json_path.with_suffix(".json.bak")
     try:
@@ -181,14 +181,14 @@ def _recover_entries(data: dict, memory_json_path: Path) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# TF-IDF search utilities
+# TF-IDF / BM25 检索工具函数
 # ---------------------------------------------------------------------------
 
-# Tokenize text into lowercase words, individual CJK chars, and CJK bigrams
+# 分词：英文/数字、单个 CJK 字符以及 CJK bigram
 _WORD_RE = re.compile(r'[a-zA-Z0-9]+|[\u4e00-\u9fff]')
 _CJK_BIGRAM_RE = re.compile(r'[\u4e00-\u9fff]{2}')
 
-# Common code terminology expansions (bidirectional)
+# 中英术语互译映射表（双向扩展）
 _CODE_TERM_EXPANSIONS: dict[str, list[str]] = {
     "函数": ["function", "func", "method"],
     "function": ["函数", "func", "method"],
@@ -297,7 +297,7 @@ _CODE_TERM_EXPANSIONS: dict[str, list[str]] = {
 
 
 def _expand_query_terms(terms: list[str]) -> list[str]:
-    """Expand query terms using code terminology dictionary."""
+    """利用术语映射表扩展查询词。"""
     expanded = list(terms)
     for term in terms:
         if term in _CODE_TERM_EXPANSIONS:
@@ -306,23 +306,23 @@ def _expand_query_terms(terms: list[str]) -> list[str]:
 
 
 def _tokenize(text: str) -> list[str]:
-    """Tokenize text into words for TF-IDF scoring.
+    """将文本分词，用于 TF-IDF / BM25 计分。
 
-    Handles alphanumeric words, individual CJK characters, and CJK bigrams
-    for better Chinese text semantic matching.
+    会同时产出英数词、单个 CJK 字符以及 CJK bigram，
+    以提升中文文本的语义匹配效果。
     """
     tokens = [w.lower() for w in _WORD_RE.findall(text)]
     cjk_bigrams = [match.lower() for match in _CJK_BIGRAM_RE.findall(text)]
     return tokens + cjk_bigrams
 
 
-# BM25 parameters
-_BM25_K1 = 1.5  # Term frequency scaling
-_BM25_B = 0.75  # Document length normalization
+# BM25 参数
+_BM25_K1 = 1.5  # 词频饱和系数
+_BM25_B = 0.75  # 文档长度归一化系数
 
 
 def _compute_tf(tokens: list[str]) -> dict[str, float]:
-    """Compute term frequency for a list of tokens."""
+    """计算一组 token 的词频（TF）。"""
     if not tokens:
         return {}
     counts = Counter(tokens)
@@ -331,9 +331,9 @@ def _compute_tf(tokens: list[str]) -> dict[str, float]:
 
 
 def _compute_idf(documents: list[list[str]]) -> dict[str, float]:
-    """Compute inverse document frequency across documents.
+    """跨文档计算逆文档频率（IDF）。
 
-    Uses smoothed IDF formula: log((N + 1) / (df + 1)) + 1
+    使用平滑公式：log((N + 1) / (df + 1)) + 1
     """
     n = len(documents)
     if n == 0:
@@ -350,7 +350,7 @@ def _compute_idf(documents: list[list[str]]) -> dict[str, float]:
 
 
 def _compute_avgdl(documents: list[list[str]]) -> float:
-    """Compute average document length."""
+    """计算文档平均长度。"""
     if not documents:
         return 0.0
     return sum(len(doc) for doc in documents) / len(documents)
@@ -365,9 +365,9 @@ def _bm25_score(
     k1: float = _BM25_K1,
     b: float = _BM25_B,
 ) -> float:
-    """Compute Okapi BM25 score between query and document.
+    """计算查询与文档间的 Okapi BM25 得分。
 
-    Formula:
+    公式：
         score(q,d) = sum(IDF(qi) * (tf(qi,d) * (k1 + 1)) /
                          (tf(qi,d) + k1 * (1 - b + b * |d|/avgdl)))
     """
@@ -398,25 +398,25 @@ def _tfidf_score(
     idf: dict[str, float],
     avgdl: float = 0.0,
 ) -> float:
-    """Compute BM25 score between query and document.
+    """计算查询与文档间的 BM25 得分。
 
-    Note: This function name is kept for backward compatibility but now
-    uses BM25 scoring internally for better short-text ranking.
+    注：函数名保留为 ``_tfidf_score`` 仅为向后兼容，
+    内部已改用 BM25 评分以获得更好的短文本排序效果。
     """
     return _bm25_score(query_tokens, doc_tokens, idf, avgdl)
 
 
 def get_tfidf_keywords(text: str, top_n: int = 10) -> list[tuple[str, float]]:
-    """Extract top N most important terms from text using TF scores.
+    """基于 TF 得分提取文本中最重要的前 N 个词。
 
-    Useful for auto-categorization and understanding key topics in text.
+    适用于自动归类、理解文本的核心主题等场景。
 
-    Args:
-        text: Input text to analyze
-        top_n: Number of top keywords to return
+    参数：
+        text: 待分析文本
+        top_n: 返回的关键词数量
 
-    Returns:
-        List of (term, tf_score) tuples sorted by importance
+    返回：
+        按重要度倒序的 (term, tf_score) 列表。
     """
     tokens = _tokenize(text)
     if not tokens:
@@ -427,7 +427,7 @@ def get_tfidf_keywords(text: str, top_n: int = 10) -> list[tuple[str, float]]:
 
 
 # ---------------------------------------------------------------------------
-# Auto-classification heuristics
+# 自动归类启发式
 # ---------------------------------------------------------------------------
 
 _CLASSIFICATION_RULES: list[tuple[str, list[str], list[str]]] = [
@@ -443,16 +443,15 @@ _CLASSIFICATION_RULES: list[tuple[str, list[str], list[str]]] = [
 
 
 def _auto_classify_content(content: str) -> tuple[str, list[str]]:
-    """Analyze content and return (category, tags) using keyword heuristics.
+    """根据关键词启发式给内容打 (category, tags)。
 
-    Supports both English and Chinese keywords. Returns "general" category
-    with empty tags if no classification rules match.
+    支持中英文关键词；若无规则匹配则返回 ("general", [])。
 
-    Args:
-        content: Text content to classify
+    参数：
+        content: 待分类文本
 
-    Returns:
-        Tuple of (category, tags) - e.g., ("architecture", ["design-pattern"])
+    返回：
+        (category, tags) 元组，例如 ("architecture", ["design-pattern"])。
     """
     content_lower = content.lower()
     category_scores: dict[str, int] = {}
@@ -485,14 +484,14 @@ def _auto_classify_content(content: str) -> tuple[str, list[str]]:
 
 
 # ---------------------------------------------------------------------------
-# Types
+# 类型定义
 # ---------------------------------------------------------------------------
 
 class MemoryScope(str, Enum):
-    """Memory scope levels."""
-    USER = "user"       # Cross-project, ~/.mini-code/memory/
-    PROJECT = "project" # Project-shared, .mini-code-memory/
-    LOCAL = "local"     # Project-local, .mini-code-memory-local/
+    """记忆作用域。"""
+    USER = "user"       # 跨项目，~/.mini-code/memory/
+    PROJECT = "project" # 项目共享，.mini-code-memory/
+    LOCAL = "local"     # 项目本地，.mini-code-memory-local/
 
 
 _VALID_SCOPES = {m.value for m in MemoryScope}
@@ -500,18 +499,18 @@ _VALID_SCOPES = {m.value for m in MemoryScope}
 
 @dataclass
 class MemoryEntry:
-    """A single memory entry (fact, pattern, decision, etc.)."""
+    """单条记忆（事实/模式/决策等）。"""
     id: str
     scope: MemoryScope
-    category: str  # e.g., "architecture", "convention", "decision", "pattern"
+    category: str  # 如 architecture / convention / decision / pattern
     content: str
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     tags: list[str] = field(default_factory=list)
-    usage_count: int = 0  # How often this was referenced
+    usage_count: int = 0  # 被引用的次数
     
     def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary for serialization."""
+        """序列化为 dict。"""
         return {
             "id": self.id,
             "scope": self.scope.value,
@@ -525,7 +524,7 @@ class MemoryEntry:
     
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "MemoryEntry":
-        """Create from dictionary."""
+        """从 dict 反序列化。"""
         return cls(
             id=data["id"],
             scope=MemoryScope(data.get("scope", "user")),
@@ -540,24 +539,24 @@ class MemoryEntry:
 
 @dataclass
 class MemoryFile:
-    """Represents a MEMORY.md file content."""
+    """对应一份 MEMORY.md 文件的结构化内容。"""
     scope: MemoryScope
     entries: list[MemoryEntry] = field(default_factory=list)
-    max_entries: int = 200  # Claude Code limit
-    max_size_bytes: int = 25 * 1024  # 25KB limit
+    max_entries: int = 200  # 与 Claude Code 一致的上限
+    max_size_bytes: int = 25 * 1024  # 25KB 上限
     
     @property
     def size_bytes(self) -> int:
-        """Estimate size in bytes."""
+        """估算占用字节数。"""
         return sum(len(e.content) for e in self.entries)
     
     def add_entry(self, entry: MemoryEntry) -> None:
-        """Add entry, respecting limits."""
+        """新增条目（受上限约束）。"""
         self.entries.append(entry)
         self._enforce_limits()
     
     def update_entry(self, entry_id: str, content: str) -> bool:
-        """Update existing entry."""
+        """更新已有条目。"""
         for entry in self.entries:
             if entry.id == entry_id:
                 entry.content = content
@@ -566,7 +565,7 @@ class MemoryFile:
         return False
     
     def delete_entry(self, entry_id: str) -> bool:
-        """Delete entry."""
+        """删除条目。"""
         for i, entry in enumerate(self.entries):
             if entry.id == entry_id:
                 self.entries.pop(i)
@@ -574,16 +573,15 @@ class MemoryFile:
         return False
     
     def get_entries_by_category(self, category: str) -> list[MemoryEntry]:
-        """Get entries filtered by category."""
+        """按 category 过滤条目。"""
         return [e for e in self.entries if e.category == category]
     
     def search(self, query: str) -> list[MemoryEntry]:
-        """Search entries by keyword with BM25 relevance scoring.
+        """以 BM25 相关度对条目检索。
 
-        Combines BM25 semantic relevance with usage frequency for
-        better result ranking than simple substring matching.
-        Query terms are expanded using code terminology dictionary.
-        Exact tag matches receive highest priority scores.
+        综合 BM25 语义相关度与使用频率排序，
+        效果优于简单的子串匹配；查询词会经过术语映射扩展，
+        tag 完全匹配会得到最高权重。
         """
         if not self.entries:
             return []
@@ -645,17 +643,17 @@ class MemoryFile:
         return [entry for _, entry in scored]
     
     def _enforce_limits(self) -> None:
-        """Remove oldest entries if exceeding limits."""
-        # Check entry count
+        """超出上限时移除最旧的条目。"""
+        # 按数量裁剪
         while len(self.entries) > self.max_entries:
-            self.entries.pop(0)  # Remove oldest
+            self.entries.pop(0)  # 删除最旧
         
-        # Check size
+        # 按大小裁剪
         while self.size_bytes > self.max_size_bytes and self.entries:
             self.entries.pop(0)
     
     def format_as_markdown(self, include_header: bool = True) -> str:
-        """Format as MEMORY.md content."""
+        """格式化为 MEMORY.md 内容。"""
         lines = []
         
         if include_header:
@@ -688,19 +686,19 @@ class MemoryFile:
 
 
 # ---------------------------------------------------------------------------
-# Memory Manager
+# 记忆管理器
 # ---------------------------------------------------------------------------
 
 @dataclass
 class MemoryPaths:
-    """Paths for memory files at different scopes."""
+    """三种作用域的记忆文件路径集合。"""
     user_memory: Path
     project_memory: Path
     local_memory: Path
     
     @classmethod
     def for_workspace(cls, workspace: str) -> "MemoryPaths":
-        """Create memory paths for a workspace."""
+        """根据工作目录构造记忆路径。"""
         workspace_path = Path(workspace)
         
         return cls(
@@ -711,7 +709,7 @@ class MemoryPaths:
 
 
 class MemoryManager:
-    """Manages layered memory system."""
+    """统一管理三层记忆系统。"""
     
     def __init__(
         self,
@@ -719,7 +717,7 @@ class MemoryManager:
         *,
         project_root: str | Path | None = None,
     ):
-        # Backward compatibility: older call sites pass `project_root=...`.
+        # 兼容老接口：旧调用方传 project_root=...
         resolved_workspace = workspace if workspace is not None else project_root
         if resolved_workspace is None:
             resolved_workspace = Path.cwd()
@@ -734,20 +732,15 @@ class MemoryManager:
         self._load_all()
     
     def _load_all(self) -> None:
-        """Load all memory files."""
+        """加载全部记忆文件。"""
         for scope in MemoryScope:
             self._load_scope(scope)
             self._auto_recover_scope(scope)
     
     def _auto_recover_scope(self, scope: MemoryScope) -> None:
-        """Check integrity and auto-recover if issues are found.
+        """加载后做完整性检查，必要时自动恢复。
 
-        After loading, validates the memory state. If integrity issues
-        are detected, attempts to recover by removing invalid entries
-        and deduplicating IDs.
-
-        Args:
-            scope: Memory scope to check and recover
+        如发现完整性问题，会移除非法条目并去重 ID。
         """
         result = self.check_integrity(scope)
         if not result["is_valid"]:
@@ -760,13 +753,10 @@ class MemoryManager:
             self._recover_scope(scope)
     
     def _recover_scope(self, scope: MemoryScope) -> None:
-        """Attempt to recover a scope with integrity issues.
+        """对存在完整性问题的 scope 做尽力修复。
 
-        Removes entries with invalid IDs, deduplicates IDs (keeps first),
-        and fixes entries with empty content or category.
-
-        Args:
-            scope: Memory scope to recover
+        移除非法 ID 的条目，去重 ID（保留首次出现），
+        并修复空 content/category。
         """
         entries = self.memories[scope].entries
         seen_ids: set[str] = set()
@@ -816,7 +806,7 @@ class MemoryManager:
         )
     
     def _load_scope(self, scope: MemoryScope) -> None:
-        """Load memory file for a scope."""
+        """加载某个 scope 的记忆文件。"""
         path = self._get_scope_path(scope)
         memory_md = path / "MEMORY.md"
         memory_json = path / "memory.json"
@@ -864,7 +854,7 @@ class MemoryManager:
             self._parse_memory_md(content, scope)
     
     def _parse_memory_md(self, content: str, scope: MemoryScope) -> None:
-        """Parse MEMORY.md file into entries."""
+        """把 MEMORY.md 文本解析为条目列表。"""
         lines = content.split("\n")
         current_category = "general"
         entry_counter = 0
@@ -902,7 +892,7 @@ class MemoryManager:
                 self.memories[scope].entries.append(entry)
     
     def _get_scope_path(self, scope: MemoryScope) -> Path:
-        """Get path for memory scope."""
+        """获取某个 scope 的路径。"""
         if scope == MemoryScope.USER:
             return self.paths.user_memory
         elif scope == MemoryScope.PROJECT:
@@ -911,7 +901,7 @@ class MemoryManager:
             return self.paths.local_memory
     
     def _ensure_scope_path(self, scope: MemoryScope) -> None:
-        """Ensure directory exists for scope."""
+        """确保 scope 目录存在。"""
         path = self._get_scope_path(scope)
         path.mkdir(parents=True, exist_ok=True)
     
@@ -922,19 +912,18 @@ class MemoryManager:
         content: str = "",
         tags: list[str] | None = None,
     ) -> MemoryEntry:
-        """Add a new memory entry.
+        """新增一条记忆。
 
-        If category is 'auto' or not provided, content will be automatically
-        classified using keyword heuristics.
+        若 ``category`` 为 ``"auto"`` 或未指定，将基于关键词启发式自动归类。
 
-        Args:
-            scope: Memory scope level
-            category: Category for the entry, or 'auto' for auto-classification
-            content: Content of the memory entry
-            tags: Optional list of tags
+        参数：
+            scope: 记忆作用域
+            category: 类别；传 ``"auto"`` 触发自动归类
+            content: 记忆内容
+            tags: 可选的 tag 列表
 
-        Returns:
-            The created MemoryEntry
+        返回：
+            新建的 MemoryEntry。
         """
         self._ensure_scope_path(scope)
 
@@ -960,21 +949,21 @@ class MemoryManager:
         return entry
     
     def update_entry(self, scope: MemoryScope, entry_id: str, content: str) -> bool:
-        """Update an existing entry."""
+        """更新已有条目。"""
         if self.memories[scope].update_entry(entry_id, content):
             self._save_scope(scope)
             return True
         return False
     
     def delete_entry(self, scope: MemoryScope, entry_id: str) -> bool:
-        """Delete an entry."""
+        """删除条目。"""
         if self.memories[scope].delete_entry(entry_id):
             self._save_scope(scope)
             return True
         return False
 
     def add_tag(self, scope: MemoryScope, entry_id: str, tag: str) -> bool:
-        """Add a tag to an entry."""
+        """为条目追加 tag。"""
         for entry in self.memories[scope].entries:
             if entry.id == entry_id:
                 if tag not in entry.tags:
@@ -984,7 +973,7 @@ class MemoryManager:
         return False
 
     def remove_tag(self, scope: MemoryScope, entry_id: str, tag: str) -> bool:
-        """Remove a tag from an entry."""
+        """从条目移除 tag。"""
         for entry in self.memories[scope].entries:
             if entry.id == entry_id:
                 if tag in entry.tags:
@@ -994,21 +983,21 @@ class MemoryManager:
         return False
 
     def search_by_tag(self, scope: MemoryScope, tag: str) -> list[MemoryEntry]:
-        """Search entries by tag."""
+        """按 tag 检索条目。"""
         return [
             entry for entry in self.memories[scope].entries
             if tag in entry.tags
         ]
 
     def get_all_tags(self, scope: MemoryScope) -> set[str]:
-        """Get all unique tags in a scope."""
+        """获取某 scope 下所有 tag。"""
         tags: set[str] = set()
         for entry in self.memories[scope].entries:
             tags.update(entry.tags)
         return tags
 
     def get_tags_by_category(self, scope: MemoryScope) -> dict[str, list[str]]:
-        """Get tags grouped by category."""
+        """按 category 分组获取 tag。"""
         category_tags: dict[str, set[str]] = {}
         for entry in self.memories[scope].entries:
             if entry.category not in category_tags:
@@ -1023,19 +1012,19 @@ class MemoryManager:
         limit: int = 20,
         min_relevance: float = 0.1,
     ) -> list[MemoryEntry]:
-        """Search across memory scopes with TF-IDF relevance ranking.
+        """跨 scope 进行 TF-IDF 相关性检索。
 
-        Combines TF-IDF semantic relevance with usage frequency for
-        better result ranking than simple substring matching.
+        综合 TF-IDF 语义相关度与使用频率排序，
+        效果优于简单的子串匹配。
 
-        Args:
-            query: Search query string
-            scope: Optional scope to limit search to
-            limit: Maximum results to return
-            min_relevance: Minimum relevance score threshold (0.0-1.0)
+        参数：
+            query: 查询字符串
+            scope: 可选，限定检索范围
+            limit: 返回结果上限
+            min_relevance: 最小相关度阈值（0.0~1.0）
 
-        Returns:
-            Entries ranked by relevance (TF-IDF + usage + recency)
+        返回：
+            按相关度排序的条目列表（综合 TF-IDF + usage + recency）。
         """
         results = []
 
@@ -1071,7 +1060,7 @@ class MemoryManager:
         return deduped[:limit]
 
     def _score_entry(self, entry: MemoryEntry, query_tokens: list[str]) -> float:
-        """Compute relevance score for a memory entry."""
+        """计算单条记忆的综合相关度。"""
         if not query_tokens:
             return 0.0
 
@@ -1114,10 +1103,10 @@ class MemoryManager:
         max_tokens: int = 8000,
         query: str | None = None,
     ) -> str:
-        """Get relevant memory context for system prompt injection.
-        
-        Returns formatted MEMORY.md content from all scopes,
-        respecting token limits.
+        """获取可注入到 system prompt 的相关记忆上下文。
+
+        返回各 scope 下的 MEMORY.md 文本，
+        且总长度受 token 上限约束。
         """
         from minicode.memory.context_manager import estimate_tokens
 
@@ -1183,11 +1172,11 @@ class MemoryManager:
         return "\n\n".join(parts)
     
     def _save_scope(self, scope: MemoryScope) -> None:
-        """Save memory to disk (atomic write to prevent corruption)."""
+        """将记忆原子写入磁盘，避免损坏。"""
         path = self._get_scope_path(scope)
         self._ensure_scope_path(scope)
         
-        # Save JSON metadata (atomic: write to temp, then replace)
+        # 先写 JSON 元数据（原子化：写临时文件 -> rename）
         memory_json = path / "memory.json"
         data = {
             "scope": scope.value,
@@ -1196,16 +1185,15 @@ class MemoryManager:
         }
         self._atomic_write(memory_json, json.dumps(data, indent=2, ensure_ascii=False))
         
-        # Also update MEMORY.md for human readability (atomic)
+        # 同步更新人类可读的 MEMORY.md
         memory_md = path / "MEMORY.md"
         self._atomic_write(memory_md, self.memories[scope].format_as_markdown())
     
     @staticmethod
     def _atomic_write(target: Path, content: str) -> None:
-        """Write content atomically: write to temp file, then os.replace().
-        
-        This prevents data corruption if the process is killed mid-write
-        or if multiple instances write to the same file concurrently.
+        """原子化写入：先写临时文件，再用 os.replace 替换。
+
+        可避免在写入过程中被中断或并发写同一文件造成的数据损坏。
         """
         import tempfile
         tmp_fd, tmp_path = tempfile.mkstemp(
@@ -1226,7 +1214,7 @@ class MemoryManager:
             raise
     
     def get_stats(self) -> dict[str, Any]:
-        """Get memory statistics."""
+        """获取记忆统计信息。"""
         return {
             scope.value: {
                 "entries": len(memory.entries),
@@ -1237,7 +1225,7 @@ class MemoryManager:
         }
     
     def format_stats(self) -> str:
-        """Format memory stats for display."""
+        """格式化记忆统计信息用于展示。"""
         stats = self.get_stats()
         lines = ["Memory System Status", "=" * 40, ""]
         
@@ -1252,14 +1240,14 @@ class MemoryManager:
         return "\n".join(lines)
     
     def clear_scope(self, scope: MemoryScope) -> None:
-        """Clear all entries in a scope."""
+        """清空某个 scope 的全部条目。"""
         self.memories[scope] = MemoryFile(scope=scope)
         self._save_scope(scope)
 
     def handle_user_memory_input(self, user_input: str) -> str | None:
-        """Handle explicit memory inputs from the main chat path.
+        """处理来自主聊天路径的显式记忆输入。
 
-        Supported forms:
+        支持的形式：
         - "# remember this project convention"
         - "/memory add remember this project convention"
         - "/memory add project: remember this shared project convention"
@@ -1293,19 +1281,19 @@ class MemoryManager:
         return f"Saved memory ({entry.scope.value}): {entry.content}"
 
     def check_integrity(self, scope: MemoryScope) -> dict[str, Any]:
-        """Validate all entries in a scope for integrity.
+        """对某个 scope 的全部条目做完整性检查。
 
-        Checks:
-        - Valid IDs (non-empty strings)
-        - Valid categories (non-empty strings)
-        - Non-empty content
-        - No duplicate IDs
+        校验项：
+        - ID 合法（非空字符串）
+        - category 合法（非空字符串）
+        - content 非空
+        - 无重复 ID
 
-        Args:
-            scope: Memory scope to check
+        参数：
+            scope: 待检查的 scope
 
-        Returns:
-            Dictionary with {is_valid: bool, issues: list[str]}
+        返回：
+            {is_valid: bool, issues: list[str]}
         """
         issues: list[str] = []
         seen_ids: set[str] = set()
@@ -1343,19 +1331,18 @@ class MemoryManager:
     def compress_scope(
         self, scope: MemoryScope, similarity_threshold: float = 0.8
     ) -> dict[str, int]:
-        """Compress memory entries by merging similar content.
+        """通过合并相似条目来压缩记忆。
 
-        Merges entries with content similarity above the threshold.
-        Removes duplicate entries (exact content matches).
-        Updates timestamps and preserves usage counts.
+        - 合并相似度高于阈值的条目
+        - 移除完全重复的条目
+        - 更新时间戳并保留 usage_count
 
-        Args:
-            scope: Memory scope to compress
-            similarity_threshold: Jaccard similarity threshold for merging
-                (default 0.8 = 80%)
+        参数：
+            scope: 待压缩的 scope
+            similarity_threshold: Jaccard 相似度合并阈值（默认 0.8）
 
-        Returns:
-            Stats dictionary with {merged_count, removed_count, remaining_count}
+        返回：
+            {merged_count, removed_count, remaining_count} 统计 dict。
         """
         entries = self.memories[scope].entries
         if len(entries) <= 1:
@@ -1431,16 +1418,16 @@ class MemoryManager:
 
     @staticmethod
     def _jaccard_similarity(text_a: str, text_b: str) -> float:
-        """Compute Jaccard similarity between two text strings.
+        """计算两个字符串的 Jaccard 相似度。
 
-        Uses token-based Jaccard similarity: |A ∩ B| / |A ∪ B|
+        基于 token 集合：``|A ∩ B| / |A ∪ B|``。
 
-        Args:
-            text_a: First text string
-            text_b: Second text string
+        参数：
+            text_a: 文本 A
+            text_b: 文本 B
 
-        Returns:
-            Similarity score between 0.0 and 1.0
+        返回：
+            0.0 ~ 1.0 之间的相似度分数。
         """
         tokens_a = set(_tokenize(text_a))
         tokens_b = set(_tokenize(text_b))
@@ -1473,7 +1460,7 @@ class MemoryManager:
         return content_b
 
     def _find_entry_indices(self, scope: MemoryScope, entry_id: str) -> list[int]:
-        """Find all indices of entries with a given ID."""
+        """查找指定 ID 的所有条目下标。"""
         indices = []
         for idx, entry in enumerate(self.memories[scope].entries):
             if entry.id == entry_id:
@@ -1482,7 +1469,7 @@ class MemoryManager:
 
 
 # ---------------------------------------------------------------------------
-# System prompt integration
+# system prompt 集成
 # ---------------------------------------------------------------------------
 
 def inject_memory_into_prompt(
@@ -1490,7 +1477,7 @@ def inject_memory_into_prompt(
     memory_manager: MemoryManager,
     max_tokens: int = 8000,
 ) -> str:
-    """Inject memory context into system prompt."""
+    """把记忆上下文注入到 system prompt。"""
     memory_context = memory_manager.get_relevant_context(max_tokens=max_tokens)
     
     if not memory_context:
@@ -1508,11 +1495,11 @@ Use this context to inform your decisions and follow established patterns."""
 
 
 # ---------------------------------------------------------------------------
-# CLI commands
+# CLI 命令
 # ---------------------------------------------------------------------------
 
 def format_memory_list(scope: MemoryScope | None = None, category: str | None = None) -> str:
-    """Format memory entries for CLI display."""
-    # This would be called with a MemoryManager instance
-    # Placeholder for CLI command formatting
+    """以 CLI 友好的形式格式化记忆条目。"""
+    # 通常需配合 MemoryManager 实例使用
+    # 此函数仅作 CLI 输出占位
     return "Memory listing not available without MemoryManager instance."

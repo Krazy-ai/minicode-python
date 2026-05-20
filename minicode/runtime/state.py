@@ -1,9 +1,9 @@
-"""Zustand-style state management for MiniCode Python.
+"""MiniCode 的 Zustand 风格状态管理。
 
-Provides a simple, predictable state container with:
-- Immutable updates via updater functions
-- Subscriber notifications on state changes
-- Type-safe generic store
+提供一个简洁、可预测的状态容器：
+- 通过 updater 函数实现不可变更新
+- 状态变更时通知订阅者
+- 基于泛型的类型安全 Store
 """
 
 from __future__ import annotations

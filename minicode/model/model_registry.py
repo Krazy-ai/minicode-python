@@ -1,12 +1,12 @@
-"""Unified model registry and routing for MiniCode.
+"""MiniCode 的统一模型注册表与路由层。
 
-Supports multiple LLM providers with a single configuration system:
-- Anthropic (Claude) — native Messages API
-- OpenAI (GPT) — Chat Completions API
-- OpenRouter — unified gateway to 200+ models
-- Custom OpenAI-compatible endpoints (vLLM, Ollama, LiteLLM, etc.)
+通过同一份配置同时支持多家 LLM 提供商：
+- Anthropic（Claude）—— 原生 Messages API
+- OpenAI（GPT）—— Chat Completions API
+- OpenRouter —— 200+ 模型的统一网关
+- 自定义 OpenAI 兼容端点（vLLM / Ollama / LiteLLM 等）
 
-Design inspired by Hermes Agent's provider/model abstraction.
+设计参考了 Hermes Agent 的 provider/model 抽象。
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from minicode.types import AgentStep
 
 
 # ---------------------------------------------------------------------------
-# Provider types
+# 提供商类型
 # ---------------------------------------------------------------------------
 
 class Provider(str, Enum):
@@ -32,22 +32,22 @@ class Provider(str, Enum):
 
 
 # ---------------------------------------------------------------------------
-# Model metadata
+# 模型元信息
 # ---------------------------------------------------------------------------
 
 @dataclass
 class ModelInfo:
-    """Static metadata about a model."""
-    name: str                          # Canonical model ID
-    provider: Provider                 # Which provider to use
-    display_name: str = ""             # Human-readable name
-    context_window: int = 128_000      # Token limit
+    """模型的静态元信息。"""
+    name: str                          # 规范化的模型 ID
+    provider: Provider                 # 使用的提供商
+    display_name: str = ""             # 人类可读名称
+    context_window: int = 128_000      # token 上限
     max_output_tokens: int | None = None
     supports_streaming: bool = True
     supports_tools: bool = True
     supports_vision: bool = False
-    pricing_input: float = 3.0        # USD per 1M input tokens
-    pricing_output: float = 15.0      # USD per 1M output tokens
+    pricing_input: float = 3.0        # 每 1M 输入 token 的美元价格
+    pricing_output: float = 15.0      # 每 1M 输出 token 的美元价格
 
     def __post_init__(self):
         if not self.display_name:
@@ -55,23 +55,23 @@ class ModelInfo:
 
 
 # ---------------------------------------------------------------------------
-# Built-in model catalog
+# 内置模型目录
 # ---------------------------------------------------------------------------
 
 BUILTIN_MODELS: dict[str, ModelInfo] = {}
 
 def _register(info: ModelInfo) -> None:
     BUILTIN_MODELS[info.name] = info
-    # Also register under common aliases
+    # 同时注册常见别名
     for alias in _aliases(info.name):
         if alias not in BUILTIN_MODELS:
             BUILTIN_MODELS[alias] = info
 
 
 def _aliases(name: str) -> list[str]:
-    """Generate common aliases for a model name."""
+    """为模型名生成常见别名。"""
     result: list[str] = []
-    # e.g. "claude-sonnet-4-20250514" -> "claude-sonnet-4", "sonnet-4"
+    # 例：claude-sonnet-4-20250514 -> claude-sonnet-4
     parts = name.split("-")
     if "claude" in parts:
         idx = parts.index("claude")
@@ -86,7 +86,7 @@ def _aliases(name: str) -> list[str]:
     return result
 
 
-# --- Anthropic models ---
+# --- Anthropic 系列 ---
 _register(ModelInfo("claude-sonnet-4-20250514", Provider.ANTHROPIC,
     context_window=200_000, max_output_tokens=16_384,
     pricing_input=3.0, pricing_output=15.0))
@@ -97,7 +97,7 @@ _register(ModelInfo("claude-haiku-3-20240307", Provider.ANTHROPIC,
     context_window=100_000, max_output_tokens=4_096,
     pricing_input=0.25, pricing_output=1.25))
 
-# --- OpenAI models ---
+# --- OpenAI 系列 ---
 _register(ModelInfo("gpt-4o", Provider.OPENAI,
     context_window=128_000, max_output_tokens=16_384,
     pricing_input=2.50, pricing_output=10.0))
@@ -117,7 +117,7 @@ _register(ModelInfo("o3-mini", Provider.OPENAI,
     context_window=200_000, max_output_tokens=100_000,
     pricing_input=1.10, pricing_output=4.40))
 
-# --- OpenRouter popular models ---
+# --- OpenRouter 上常见的模型 ---
 _register(ModelInfo("openrouter/auto", Provider.OPENROUTER,
     display_name="OpenRouter Auto", context_window=200_000,
     pricing_input=3.0, pricing_output=15.0))
@@ -157,36 +157,36 @@ _register(ModelInfo("minimax/minimax-m1", Provider.OPENROUTER,
 
 
 # ---------------------------------------------------------------------------
-# Provider detection
+# 提供商自动检测
 # ---------------------------------------------------------------------------
 
 def detect_provider(model: str, runtime: dict | None = None) -> Provider:
-    """Auto-detect which provider to use based on model name and config.
+    """根据模型名和运行时配置推断提供商。
 
-    Priority:
-    1. OpenRouter — if OPENROUTER_API_KEY set or model starts with "openrouter/"
-    2. OpenAI — if model matches OpenAI patterns or OPENAI_API_KEY set
-    3. Custom — if CUSTOM_API_BASE_URL set
-    4. Anthropic — default
+    优先级：
+    1. OpenRouter —— 设置了 OPENROUTER_API_KEY 或模型以 ``openrouter/`` 开头
+    2. OpenAI —— 模型符合 OpenAI 命名或设置了 OPENAI_API_KEY
+    3. Custom —— 设置了 CUSTOM_API_BASE_URL
+    4. Anthropic —— 兜底默认值
     """
     model_lower = model.lower()
 
-    # 1. OpenRouter detection
+    # 1. OpenRouter
     if os.environ.get("OPENROUTER_API_KEY") or model_lower.startswith("openrouter/"):
         return Provider.OPENROUTER
-    # Also check provider prefix patterns like "anthropic/", "openai/", "google/"
+    # 命名形如 anthropic/、openai/、google/ 也按 OpenRouter 处理
     for prefix in ("anthropic/", "openai/", "google/", "meta-llama/", "deepseek/",
                    "qwen/", "minimax/", "mistralai/"):
         if model_lower.startswith(prefix):
             if os.environ.get("OPENROUTER_API_KEY"):
                 return Provider.OPENROUTER
-            # Could also be a custom endpoint with this naming
+            # 也可能是带这种命名的自定义端点
             if runtime and runtime.get("openaiBaseUrl"):
                 return Provider.CUSTOM
-            # Default to OpenRouter for vendor-prefixed models
+            # 默认仍按 OpenRouter
             return Provider.OPENROUTER
 
-    # 2. OpenAI detection
+    # 2. OpenAI
     openai_prefixes = ("gpt-4", "gpt-3.5", "o1-", "o3-", "chatgpt-")
     openai_exact = {"gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o1", "o1-mini", "o3-mini"}
     if model_lower in openai_exact or any(model_lower.startswith(p) for p in openai_prefixes):
@@ -194,7 +194,7 @@ def detect_provider(model: str, runtime: dict | None = None) -> Provider:
     if os.environ.get("OPENAI_API_KEY") and not os.environ.get("ANTHROPIC_API_KEY"):
         return Provider.OPENAI
 
-    # 3. Custom endpoint detection
+    # 3. 自定义端点
     custom_base = (
         os.environ.get("CUSTOM_API_BASE_URL", "")
         or (runtime or {}).get("customBaseUrl", "")
@@ -202,22 +202,22 @@ def detect_provider(model: str, runtime: dict | None = None) -> Provider:
     if custom_base:
         return Provider.CUSTOM
 
-    # 4. Default: Anthropic
+    # 4. 默认 Anthropic
     return Provider.ANTHROPIC
 
 
 def resolve_model_info(model: str, provider: Provider | None = None) -> ModelInfo:
-    """Resolve a model name to ModelInfo, with fallback for unknown models."""
-    # Check built-in catalog first
+    """将模型名解析为 ModelInfo；未知模型返回兜底值。"""
+    # 先查内置目录
     if model in BUILTIN_MODELS:
         return BUILTIN_MODELS[model]
 
-    # Try case-insensitive lookup
+    # 再做大小写不敏感匹配
     for key, info in BUILTIN_MODELS.items():
         if key.lower() == model.lower():
             return info
 
-    # Unknown model: generate a best-effort ModelInfo
+    # 未知模型：尽力构造一个兜底 ModelInfo
     resolved_provider = provider or detect_provider(model)
     return ModelInfo(
         name=model,
@@ -229,12 +229,12 @@ def resolve_model_info(model: str, provider: Provider | None = None) -> ModelInf
 
 
 # ---------------------------------------------------------------------------
-# Provider configuration builder
+# 提供商配置生成
 # ---------------------------------------------------------------------------
 
 @dataclass
 class ProviderConfig:
-    """Resolved provider configuration for a model."""
+    """某个模型对应的运行时提供商配置。"""
     provider: Provider
     model: str
     base_url: str
@@ -244,15 +244,15 @@ class ProviderConfig:
 
     @property
     def is_openai_compatible(self) -> bool:
-        """Whether this provider uses OpenAI Chat Completions API format."""
+        """该提供商是否使用 OpenAI Chat Completions API 协议。"""
         return self.provider in (Provider.OPENAI, Provider.OPENROUTER, Provider.CUSTOM)
 
 
 def build_provider_config(model: str, runtime: dict | None = None) -> ProviderConfig:
-    """Build provider configuration from model name and runtime config.
+    """根据模型名和运行时配置构造 ProviderConfig。
 
-    This centralizes all the provider-specific URL/key/header logic that was
-    previously scattered across main.py, headless.py, gateway.py, etc.
+    把原本散落在 main.py / headless.py / gateway.py 里的
+    URL / key / header 拼装逻辑集中到此处。
     """
     runtime = runtime or {}
     provider = detect_provider(model, runtime)
@@ -269,7 +269,7 @@ def build_provider_config(model: str, runtime: dict | None = None) -> ProviderCo
                 "X-Title": os.environ.get("OPENROUTER_TITLE", "MiniCode Python"),
             },
             extra_params={
-                # OpenRouter supports provider-specific routing
+                # OpenRouter 支持指定 provider 路由
                 "transforms": os.environ.get("OPENROUTER_TRANSFORMS", "").split(",")
                 if os.environ.get("OPENROUTER_TRANSFORMS") else None,
             },
@@ -308,7 +308,7 @@ def build_provider_config(model: str, runtime: dict | None = None) -> ProviderCo
             extra_headers=_parse_extra_headers("CUSTOM_API_EXTRA_HEADERS"),
         )
 
-    # Default: Anthropic
+    # 默认 Anthropic
     base_url = (
         os.environ.get("ANTHROPIC_BASE_URL", "")
         or runtime.get("baseUrl", "")
@@ -322,8 +322,8 @@ def build_provider_config(model: str, runtime: dict | None = None) -> ProviderCo
         os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
         or runtime.get("authToken", "")
     )
-    # Anthropic uses x-api-key header, but we keep it in api_key for simplicity
-    # The adapter will handle the difference
+    # Anthropic 使用 x-api-key，但为了简化我们仍存放在 api_key 字段，
+    # 由具体的 adapter 负责区分处理
     return ProviderConfig(
         provider=Provider.ANTHROPIC,
         model=model,
@@ -334,7 +334,7 @@ def build_provider_config(model: str, runtime: dict | None = None) -> ProviderCo
 
 
 def _parse_extra_headers(env_var: str) -> dict[str, str]:
-    """Parse 'Key1:Val1,Key2:Val2' from env var into dict."""
+    """将环境变量中的 ``Key1:Val1,Key2:Val2`` 解析为 dict。"""
     raw = os.environ.get(env_var, "")
     if not raw:
         return {}
@@ -347,7 +347,7 @@ def _parse_extra_headers(env_var: str) -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# Model adapter factory (centralized replacement for scattered if/elif)
+# 模型适配器工厂（替代到处重复的 if/elif）
 # ---------------------------------------------------------------------------
 
 def create_model_adapter(
@@ -356,19 +356,19 @@ def create_model_adapter(
     runtime: dict | None = None,
     force_mock: bool = False,
 ) -> Any:
-    """Create the appropriate ModelAdapter for the given model.
+    """根据模型名创建对应的 ModelAdapter。
 
-    This replaces the duplicated model-selection logic in main.py,
-    headless.py, gateway.py, etc. with a single call.
+    取代了之前在 main.py / headless.py / gateway.py 等处重复的模型选择逻辑，
+    所有调用方只需调用这一个函数即可。
 
-    Args:
-        model: Model name (e.g., "claude-sonnet-4-20250514", "openai/gpt-4o")
-        tools: Tool registry instance
-        runtime: Runtime configuration dict
-        force_mock: Force mock mode (for testing or no API key)
+    参数：
+        model: 模型名（如 ``claude-sonnet-4-20250514`` 或 ``openai/gpt-4o``）
+        tools: ToolRegistry 实例
+        runtime: 运行时配置 dict
+        force_mock: 是否强制使用 Mock（用于测试或无 API key 时）
 
-    Returns:
-        A ModelAdapter instance (AnthropicModelAdapter, OpenAIModelAdapter, or MockModelAdapter)
+    返回：
+        ModelAdapter 实例（AnthropicModelAdapter / OpenAIModelAdapter / MockModelAdapter）。
     """
     if force_mock or os.environ.get("MINI_CODE_MODEL_MODE") == "mock":
         from minicode.model.mock_model import MockModelAdapter
@@ -376,10 +376,10 @@ def create_model_adapter(
 
     provider_config = build_provider_config(model, runtime)
 
-    # OpenRouter / Custom / OpenAI all use OpenAI-compatible API
+    # OpenRouter / Custom / OpenAI 都使用 OpenAI 兼容协议
     if provider_config.is_openai_compatible:
         from minicode.model.openai_adapter import OpenAIModelAdapter
-        # Inject provider config into runtime so the adapter can use it
+        # 把 provider 配置注入 runtime，给 adapter 使用
         enriched_runtime = dict(runtime or {})
         enriched_runtime["model"] = provider_config.model
         if provider_config.provider == Provider.OPENROUTER:
@@ -402,12 +402,12 @@ def create_model_adapter(
 
 
 # ---------------------------------------------------------------------------
-# Runtime model switching
+# 运行时切换模型
 # ---------------------------------------------------------------------------
 
 @dataclass
 class ModelSwitch:
-    """Result of a model switch operation."""
+    """模型切换操作的结果。"""
     success: bool
     old_model: str
     new_model: str
@@ -416,9 +416,9 @@ class ModelSwitch:
 
 
 def list_available_models(provider: Provider | None = None) -> list[ModelInfo]:
-    """List all available models, optionally filtered by provider."""
+    """列出所有可用模型，可按提供商过滤。"""
     models = list(BUILTIN_MODELS.values())
-    # Deduplicate (aliases point to same ModelInfo)
+    # 去重（多个别名指向同一个 ModelInfo）
     seen: set[str] = set()
     unique: list[ModelInfo] = []
     for m in models:
@@ -431,7 +431,7 @@ def list_available_models(provider: Provider | None = None) -> list[ModelInfo]:
 
 
 def format_model_list(provider: Provider | None = None) -> str:
-    """Format available models as a readable table."""
+    """以可读的表格形式展示模型列表。"""
     models = list_available_models(provider)
     if not models:
         return "No models available."
@@ -462,7 +462,7 @@ def format_model_list(provider: Provider | None = None) -> str:
 
 
 def format_model_status(model: str, runtime: dict | None = None) -> str:
-    """Format current model status."""
+    """格式化当前模型的运行状态信息。"""
     provider = detect_provider(model, runtime)
     info = resolve_model_info(model, provider)
     pconfig = build_provider_config(model, runtime)

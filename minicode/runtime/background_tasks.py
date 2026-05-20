@@ -1,3 +1,9 @@
+"""后台任务注册表与槽位管理。
+
+跟踪后台启动的子进程（如 long-running shell 命令），
+提供存活状态刷新、并发槽位限制、完成回调等能力。
+"""
+
 from __future__ import annotations
 
 import os
@@ -8,25 +14,25 @@ from typing import Any, Callable
 
 from minicode.tooling import BackgroundTaskResult
 
-# In-memory registry of background tasks
+# 内存中的后台任务注册表
 _background_tasks: dict[str, dict[str, Any]] = {}
 
-# Task slot management
-_max_slots: int = 5  # Maximum concurrent background tasks
-_slot_callbacks: dict[str, Callable] = {}  # Completion callbacks
+# 任务槽位管理
+_max_slots: int = 5  # 最大并发后台任务数
+_slot_callbacks: dict[str, Callable] = {}  # 完成回调
 
 
 def _is_process_alive(pid: int) -> bool | None:
-    """Check if a process is alive.  Cross-platform.
+    """跨平台检查进程是否存活。
 
-    Returns:
-        True  — process is alive
-        False — process is definitely gone
-        None  — cannot determine (treat as "failed")
+    返回：
+        True  — 仍在运行
+        False — 进程已经结束
+        None  — 无法判断（视为「失败」）
     """
     if sys.platform == "win32":
-        # On Windows, os.kill(pid, 0) raises OSError for *every* case
-        # (including when the process exists), so we use ctypes instead.
+        # Windows 上 os.kill(pid, 0) 在所有情况下都会抛 OSError
+        # （包括进程仍然存在），因此改用 ctypes
         try:
             import ctypes
 
@@ -36,7 +42,7 @@ def _is_process_alive(pid: int) -> bool | None:
 
             handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
             if not handle:
-                return False  # Cannot open → process gone
+                return False  # 打不开句柄即视为已结束
 
             try:
                 exit_code = ctypes.c_ulong()
@@ -48,21 +54,21 @@ def _is_process_alive(pid: int) -> bool | None:
         except Exception:
             return None
     else:
-        # Unix: signal 0 checks existence without actually sending a signal
+        # Unix：发送 0 号信号检查存在性，不会真的发信号
         try:
             os.kill(pid, 0)
             return True
         except ProcessLookupError:
             return False
         except PermissionError:
-            # EPERM — process exists but we can't signal it; still alive
+            # EPERM —— 进程存在但我们没权限发信号，仍视为存活
             return True
         except OSError:
             return None
 
 
 def _refresh_record(record: dict[str, Any]) -> dict[str, Any]:
-    """Check if a running process is still alive and update status."""
+    """检查 running 任务是否仍存活并更新状态。"""
     if record.get("status") != "running":
         return record
     pid = record.get("pid")
@@ -80,6 +86,7 @@ def _refresh_record(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def register_background_shell_task(command: str, pid: int, cwd: str) -> BackgroundTaskResult:
+    """注册一个后台 shell 任务。"""
     del cwd
     result = BackgroundTaskResult(
         taskId=f"task_{uuid.uuid4().hex[:8]}",
@@ -102,12 +109,12 @@ def register_background_shell_task(command: str, pid: int, cwd: str) -> Backgrou
 
 
 def list_background_tasks() -> list[dict[str, Any]]:
-    """Return the list of currently tracked background tasks with refreshed status."""
+    """返回当前跟踪的所有后台任务（状态已刷新）。"""
     return [_refresh_record(record) for record in _background_tasks.values()]
 
 
 def get_background_task(task_id: str) -> dict[str, Any] | None:
-    """Get a single background task by ID with refreshed status."""
+    """按 ID 获取单个后台任务（状态已刷新）。"""
     record = _background_tasks.get(task_id)
     if record is None:
         return None
@@ -115,11 +122,11 @@ def get_background_task(task_id: str) -> dict[str, Any] | None:
 
 
 # ---------------------------------------------------------------------------
-# Task Slot Management
+# 槽位管理
 # ---------------------------------------------------------------------------
 
 def get_slot_stats() -> dict[str, Any]:
-    """Get current slot usage statistics."""
+    """获取当前槽位使用统计。"""
     running = sum(1 for r in _background_tasks.values() if r.get("status") == "running")
     return {
         "used_slots": running,
@@ -130,26 +137,26 @@ def get_slot_stats() -> dict[str, Any]:
 
 
 def can_start_new_task() -> bool:
-    """Check if there's an available slot for a new task."""
+    """是否还有空闲槽位可用于启动新任务。"""
     stats = get_slot_stats()
     return stats["available_slots"] > 0
 
 
 def set_max_slots(max_slots: int) -> None:
-    """Set the maximum number of concurrent background tasks."""
+    """设置最大并发后台任务数。"""
     global _max_slots
-    _max_slots = max(1, max_slots)  # At least 1 slot
+    _max_slots = max(1, max_slots)  # 至少保留 1 个槽位
 
 
 def register_completion_callback(task_id: str, callback: Callable) -> None:
-    """Register a callback for when a task completes."""
+    """为指定任务注册完成回调。"""
     _slot_callbacks[task_id] = callback
 
 
 def check_completed_tasks() -> list[str]:
-    """Check for completed tasks and fire callbacks.
+    """扫描已完成任务并触发回调。
 
-    Returns list of completed task IDs.
+    返回已完成的任务 ID 列表。
     """
     completed = []
     for task_id, record in list(_background_tasks.items()):
@@ -157,18 +164,18 @@ def check_completed_tasks() -> list[str]:
             refreshed = _refresh_record(record)
             if refreshed["status"] != "running":
                 completed.append(task_id)
-                # Fire callback if registered
+                # 触发已注册的回调
                 callback = _slot_callbacks.pop(task_id, None)
                 if callback:
                     try:
                         callback(task_id, refreshed)
                     except Exception:
-                        pass  # Don't let callback errors break the loop
+                        pass  # 回调异常不应影响主循环
     return completed
 
 
 def format_slot_status() -> str:
-    """Format slot status for display."""
+    """格式化槽位状态用于展示。"""
     stats = get_slot_stats()
     running_tasks = [
         r for r in _background_tasks.values() if r.get("status") == "running"

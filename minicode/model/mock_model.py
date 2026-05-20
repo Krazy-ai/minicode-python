@@ -19,6 +19,8 @@ def _latest_assistant_call(messages):
 
 
 class MockModelAdapter:
+    """Mock 模型适配器：基于规则匹配的本地伪 LLM，便于离线/测试场景。"""
+
     def next(self, messages, on_stream_chunk=None):
         tool_message = _last_tool_message(messages)
         if tool_message and tool_message["role"] == "tool_result":

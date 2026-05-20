@@ -1,11 +1,11 @@
-"""Edit file tool with precise string matching, inspired by Claude Code's Edit tool.
+"""文件编辑工具：精确字符串匹配，参考 Claude Code 的 Edit。
 
-Key features:
-- Exact string match with line/whitespace-aware comparison
-- Multiple match detection and disambiguation
-- Fuzzy whitespace matching (tabs vs spaces, trailing whitespace)
-- Line number diagnostics on mismatch
-- Replace-all mode
+主要特性：
+- 精确字符串匹配，区分行边界和空白
+- 多次命中检测与歧义消解
+- 模糊空白匹配（tab vs 空格、行尾空白）
+- 不匹配时给出行号诊断
+- 支持 replace-all 模式
 """
 from __future__ import annotations
 

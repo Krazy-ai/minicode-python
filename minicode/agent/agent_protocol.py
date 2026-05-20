@@ -1,15 +1,18 @@
-"""Multi-agent collaboration protocol.
+"""多 Agent 协作协议（实验性）。
 
-Inspired by Learn Claude Code best practices:
-- Named persistent teammates with standardized communication
-- Safe autonomous task claiming with validation
-- Worktree execution isolation for parallel operations
+参考 "Learn Claude Code" 的最佳实践：
+    - 命名持久化的 teammate，使用标准化通信协议
+    - 安全的自主任务认领（带角色与能力校验）
+    - 通过 git worktree 实现并行操作的执行隔离
 
-Provides:
-- AgentIdentity: Named agent with capabilities and status
-- CollaborationMessage: Standardized message format for inter-agent communication
-- TeamRegistry: Registry of available agents with task claiming
-- MessageRouter: Routes messages between agents safely
+提供四个核心抽象：
+    - AgentIdentity：带能力清单和状态的命名 agent
+    - CollaborationMessage：agent 间通信的统一消息格式
+    - TeamRegistry：可用 agent 的注册中心，支持任务发布与认领
+    - MessageRouter：在 agent 之间安全转发消息
+
+注意：这是为多 agent 编排预留的基础设施，目前主要由 ``task`` 工具的子 agent
+机制使用。
 """
 
 from __future__ import annotations
@@ -24,11 +27,11 @@ from minicode.memory.context_isolation import AgentContext, ContextSandbox, get_
 
 
 # ---------------------------------------------------------------------------
-# Agent Identity
+# Agent 身份
 # ---------------------------------------------------------------------------
 
 class AgentStatus(str, Enum):
-    """Agent lifecycle status."""
+    """Agent 生命周期状态。"""
     IDLE = "idle"
     BUSY = "busy"
     AWAY = "away"
@@ -36,20 +39,19 @@ class AgentStatus(str, Enum):
 
 
 class AgentRole(str, Enum):
-    """Agent role types."""
-    EXPLORER = "explorer"      # Codebase exploration
-    PLANNER = "planner"        # Task planning and decomposition
-    IMPLEMENTER = "implementer"  # Code implementation
-    REVIEWER = "reviewer"      # Code review and quality checks
-    GENERAL = "general"        # General purpose
+    """Agent 角色类型。"""
+    EXPLORER = "explorer"      # 代码库探索
+    PLANNER = "planner"        # 任务规划与拆解
+    IMPLEMENTER = "implementer"  # 代码实现
+    REVIEWER = "reviewer"      # Code review 与质量检查
+    GENERAL = "general"        # 通用
 
 
 @dataclass
 class AgentIdentity:
-    """Named persistent agent identity.
+    """命名持久化 agent 身份。
 
-    Each agent has a unique identity with capabilities, status,
-    and current task information.
+    每个 agent 拥有唯一身份，包含能力清单、状态和当前任务信息。
     """
 
     agent_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
@@ -63,65 +65,65 @@ class AgentIdentity:
     last_active: float = field(default_factory=time.time)
 
     def start_task(self, task_id: str) -> None:
-        """Mark agent as busy with a task."""
+        """把 agent 标记为 BUSY，关联到指定任务。"""
         self.status = AgentStatus.BUSY
         self.current_task = task_id
         self.task_started_at = time.time()
         self.last_active = time.time()
 
     def complete_task(self) -> None:
-        """Mark task as complete and return to idle."""
+        """标记任务完成，回到 IDLE。"""
         self.status = AgentStatus.IDLE
         self.current_task = None
         self.task_started_at = None
         self.last_active = time.time()
 
     def go_away(self) -> None:
-        """Mark agent as temporarily unavailable."""
+        """临时不可用（AWAY）。"""
         self.status = AgentStatus.AWAY
         self.last_active = time.time()
 
     def go_offline(self) -> None:
-        """Mark agent as offline."""
+        """下线（OFFLINE）。"""
         self.status = AgentStatus.OFFLINE
         self.last_active = time.time()
 
     def is_available(self) -> bool:
-        """Check if agent is available for new tasks."""
+        """是否可接收新任务（仅 IDLE 状态时为 True）。"""
         return self.status == AgentStatus.IDLE
 
     def get_active_duration(self) -> float:
-        """Get duration of current task in seconds."""
+        """当前任务已执行的秒数。"""
         if self.task_started_at is None:
             return 0.0
         return time.time() - self.task_started_at
 
 
 # ---------------------------------------------------------------------------
-# Collaboration Messages
+# 协作消息
 # ---------------------------------------------------------------------------
 
 class MessageType(str, Enum):
-    """Standardized message types for inter-agent communication."""
-    TASK_ASSIGN = "task_assign"         # Assign task to agent
-    TASK_CLAIM = "task_claim"           # Agent claims available task
-    TASK_COMPLETE = "task_complete"     # Task completed notification
-    TASK_FAILED = "task_failed"         # Task failed notification
-    HELP_REQUEST = "help_request"       # Request assistance
-    HELP_RESPONSE = "help_response"     # Response to help request
-    STATUS_UPDATE = "status_update"     # Agent status update
-    CONTEXT_SHARE = "context_share"     # Share context information
-    REVIEW_REQUEST = "review_request"   # Request code review
-    REVIEW_RESPONSE = "review_response" # Code review feedback
+    """agent 间通信的标准化消息类型。"""
+    TASK_ASSIGN = "task_assign"         # 给指定 agent 派活
+    TASK_CLAIM = "task_claim"           # agent 主动认领可用任务
+    TASK_COMPLETE = "task_complete"     # 任务完成通知
+    TASK_FAILED = "task_failed"         # 任务失败通知
+    HELP_REQUEST = "help_request"       # 求助请求
+    HELP_RESPONSE = "help_response"     # 对求助的回复
+    STATUS_UPDATE = "status_update"     # agent 状态变化广播
+    CONTEXT_SHARE = "context_share"     # 共享上下文信息
+    REVIEW_REQUEST = "review_request"   # 请求 code review
+    REVIEW_RESPONSE = "review_response" # code review 反馈
 
 
 @dataclass
 class CollaborationMessage:
-    """Standardized message format for inter-agent communication."""
+    """agent 间通信的标准消息格式。"""
 
     msg_type: MessageType
     sender_id: str
-    receiver_id: str | None = None  # None = broadcast
+    receiver_id: str | None = None  # None 表示广播
     task_id: str | None = None
     content: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -129,7 +131,7 @@ class CollaborationMessage:
     msg_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize message to dictionary."""
+        """序列化为 dict（便于跨进程传递）。"""
         return {
             "msg_id": self.msg_id,
             "msg_type": self.msg_type.value,
@@ -143,7 +145,7 @@ class CollaborationMessage:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CollaborationMessage:
-        """Deserialize message from dictionary."""
+        """从 dict 反序列化。"""
         return cls(
             msg_type=MessageType(data["msg_type"]),
             sender_id=data["sender_id"],
@@ -157,30 +159,30 @@ class CollaborationMessage:
 
 
 # ---------------------------------------------------------------------------
-# Team Registry
+# 团队注册中心
 # ---------------------------------------------------------------------------
 
 @dataclass
 class TaskPosting:
-    """A task available for agents to claim."""
+    """一条可被 agent 认领的任务广告。"""
 
     task_id: str
     description: str
     required_role: AgentRole | None = None
     required_capabilities: list[str] = field(default_factory=list)
-    priority: str = "normal"  # low, normal, high, critical
+    priority: str = "normal"  # low / normal / high / critical
     posted_at: float = field(default_factory=time.time)
     claimed_by: str | None = None
-    status: str = "open"  # open, claimed, completed, failed
+    status: str = "open"  # open / claimed / completed / failed
 
 
 class TeamRegistry:
-    """Registry of available agents with standardized task claiming.
+    """可用 agent 的注册中心，支持标准化的任务认领流程。
 
-    Manages:
-    - Agent registration and discovery
-    - Task posting and claiming
-    - Safe autonomous task assignment
+    管理：
+        - agent 注册与发现
+        - 任务发布与认领
+        - 安全的自主任务派发（含角色 + 能力校验）
     """
 
     def __init__(self) -> None:
@@ -188,17 +190,17 @@ class TeamRegistry:
         self._tasks: dict[str, TaskPosting] = {}
         self._message_handlers: dict[MessageType, list[Callable]] = {}
 
-    # --- Agent Management ---
+    # --- agent 管理 ---
     def register_agent(self, agent: AgentIdentity) -> None:
-        """Register an agent with the team."""
+        """把 agent 注册到团队。"""
         self._agents[agent.agent_id] = agent
 
     def unregister_agent(self, agent_id: str) -> None:
-        """Remove an agent from the team."""
+        """从团队中移除 agent。"""
         self._agents.pop(agent_id, None)
 
     def get_agent(self, agent_id: str) -> AgentIdentity | None:
-        """Get agent identity by ID."""
+        """按 ID 取 agent，找不到返回 None。"""
         return self._agents.get(agent_id)
 
     def get_available_agents(
@@ -206,7 +208,7 @@ class TeamRegistry:
         role: AgentRole | None = None,
         capability: str | None = None,
     ) -> list[AgentIdentity]:
-        """Get list of available agents matching criteria."""
+        """按条件筛选可用 agent（IDLE 状态 + 角色匹配 + 能力匹配）。"""
         available = [a for a in self._agents.values() if a.is_available()]
 
         if role:
@@ -220,7 +222,7 @@ class TeamRegistry:
 
         return available
 
-    # --- Task Management ---
+    # --- 任务管理 ---
     def post_task(
         self,
         description: str,
@@ -228,7 +230,7 @@ class TeamRegistry:
         required_capabilities: list[str] | None = None,
         priority: str = "normal",
     ) -> TaskPosting:
-        """Post a task for agents to claim."""
+        """发布一条等待认领的任务。"""
         task = TaskPosting(
             task_id=str(uuid.uuid4())[:8],
             description=description,
@@ -244,7 +246,7 @@ class TeamRegistry:
         task_id: str,
         agent_id: str,
     ) -> bool:
-        """Agent claims a task. Returns True if successful."""
+        """agent 认领任务。校验通过且认领成功返回 True。"""
         task = self._tasks.get(task_id)
         agent = self._agents.get(agent_id)
 
@@ -257,7 +259,7 @@ class TeamRegistry:
         if not agent.is_available():
             return False
 
-        # Validate role/capability requirements
+        # 校验角色 / 能力是否满足要求
         if task.required_role and agent.role != task.required_role:
             return False
 
@@ -265,7 +267,7 @@ class TeamRegistry:
             if cap not in agent.capabilities:
                 return False
 
-        # Claim the task
+        # 认领任务
         task.claimed_by = agent_id
         task.status = "claimed"
         agent.start_task(task_id)
@@ -273,7 +275,7 @@ class TeamRegistry:
         return True
 
     def complete_task(self, task_id: str, agent_id: str) -> bool:
-        """Mark task as completed."""
+        """标记任务完成。仅认领者本人可调用。"""
         task = self._tasks.get(task_id)
         agent = self._agents.get(agent_id)
 
@@ -289,7 +291,7 @@ class TeamRegistry:
         return True
 
     def fail_task(self, task_id: str, agent_id: str, reason: str = "") -> bool:
-        """Mark task as failed."""
+        """标记任务失败。"""
         task = self._tasks.get(task_id)
         agent = self._agents.get(agent_id)
 
@@ -298,27 +300,27 @@ class TeamRegistry:
 
         task.status = "failed"
         task.metadata["failure_reason"] = reason
-        agent.complete_task()  # Return to idle
+        agent.complete_task()  # 失败也回到 IDLE，方便接新任务
 
         return True
 
     def get_open_tasks(self) -> list[TaskPosting]:
-        """Get all open tasks."""
+        """返回所有 open 状态的任务。"""
         return [t for t in self._tasks.values() if t.status == "open"]
 
-    # --- Message Routing ---
+    # --- 消息路由 ---
     def register_handler(
         self,
         msg_type: MessageType,
         handler: Callable[[CollaborationMessage], None],
     ) -> None:
-        """Register a message handler for a message type."""
+        """为某种消息类型注册处理函数。"""
         if msg_type not in self._message_handlers:
             self._message_handlers[msg_type] = []
         self._message_handlers[msg_type].append(handler)
 
     def send_message(self, message: CollaborationMessage) -> list[Any]:
-        """Send a message to registered handlers."""
+        """把消息分发给所有已注册的 handler，返回它们各自的返回值列表。"""
         handlers = self._message_handlers.get(message.msg_type, [])
         results = []
         for handler in handlers:
@@ -328,9 +330,9 @@ class TeamRegistry:
                 results.append(None)
         return results
 
-    # --- Status ---
+    # --- 状态查询 ---
     def get_team_status(self) -> dict[str, Any]:
-        """Get overall team status."""
+        """返回结构化的团队状态摘要。"""
         return {
             "agents": {
                 aid: {
@@ -350,7 +352,7 @@ class TeamRegistry:
         }
 
     def format_team_status(self) -> str:
-        """Format team status for display."""
+        """把团队状态格式化为可读文本（供 UI / 命令行展示）。"""
         status = self.get_team_status()
         lines = [
             "Team Status",
@@ -377,19 +379,19 @@ class TeamRegistry:
 
 
 # ---------------------------------------------------------------------------
-# Module-level singleton
+# 模块级单例与便捷函数
 # ---------------------------------------------------------------------------
 
 _team_registry = TeamRegistry()
 
 
 def get_team_registry() -> TeamRegistry:
-    """Get the global team registry."""
+    """获取全局团队注册中心单例。"""
     return _team_registry
 
 
 def register_agent(agent: AgentIdentity) -> None:
-    """Convenience function to register an agent."""
+    """便捷函数：注册一个 agent。"""
     _team_registry.register_agent(agent)
 
 
@@ -399,14 +401,14 @@ def post_task(
     required_capabilities: list[str] | None = None,
     priority: str = "normal",
 ) -> TaskPosting:
-    """Convenience function to post a task."""
+    """便捷函数：发布一条任务。"""
     return _team_registry.post_task(
         description, required_role, required_capabilities, priority
     )
 
 
 def claim_task(task_id: str, agent_id: str) -> bool:
-    """Convenience function to claim a task."""
+    """便捷函数：让 agent 认领任务。"""
     return _team_registry.claim_task(task_id, agent_id)
 
 
@@ -414,10 +416,10 @@ def get_available_agents(
     role: AgentRole | None = None,
     capability: str | None = None,
 ) -> list[AgentIdentity]:
-    """Convenience function to get available agents."""
+    """便捷函数：获取可用 agent 列表。"""
     return _team_registry.get_available_agents(role, capability)
 
 
 def format_team_status() -> str:
-    """Convenience function to format team status."""
+    """便捷函数：格式化团队状态文本。"""
     return _team_registry.format_team_status()

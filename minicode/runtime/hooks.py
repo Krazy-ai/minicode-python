@@ -1,15 +1,15 @@
-"""Hooks event system for MiniCode Python.
+"""MiniCode 的 Hooks 事件系统。
 
-Inspired by Claude Code's hooks system (PreToolUse, PostToolUse, Stop, etc.)
-and plugin event listeners.
+参考了 Claude Code 的 hooks 机制（PreToolUse/PostToolUse/Stop 等）
+以及插件式事件监听。
 
-Provides lifecycle hooks for:
-- Tool execution (pre/post)
-- Agent lifecycle (start/stop)
-- Session events (save/resume)
-- User interactions (input/output)
+为以下生命周期点提供 hook：
+- 工具调用（pre/post）
+- agent 生命周期（start/stop）
+- 会话事件（save/resume）
+- 用户交互（input/output）
 
-Hooks can trigger external scripts, logging, or custom behaviors.
+hooks 可以触发外部脚本、日志或自定义行为。
 """
 
 from __future__ import annotations

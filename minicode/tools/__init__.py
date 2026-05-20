@@ -1,3 +1,9 @@
+"""tools 子包：所有内置工具的实现。
+
+每个工具暴露 description（发给 LLM）、input_schema 与执行函数，
+通过 ToolRegistry 注册并被 agent loop 调度。
+"""
+
 from dataclasses import asdict
 import os
 
@@ -28,9 +34,9 @@ from minicode.tools.task import task_tool
 
 
 _CORE_TOOLS = [
-    # User interaction
+    # 用户交互
     ask_user_tool,
-    # File operations
+    # 文件操作
     list_files_tool,
     grep_files_tool,
     read_file_tool,
@@ -38,34 +44,35 @@ _CORE_TOOLS = [
     modify_file_tool,
     edit_file_tool,
     patch_file_tool,
-    # Batch operations
+    # 批量操作
     batch_copy_tool,
     batch_move_tool,
     batch_delete_tool,
-    # Command execution
+    # 命令执行
     run_command_tool,
-    # Web tools
+    # 网络工具
     web_fetch_tool,
     web_search_tool,
-    # Task management
+    # 任务管理
     todo_write_tool,
-    # Sub-agent
+    # 子 agent
     task_tool,
-    # Git workflow
+    # Git 工作流
     git_tool,
-    # Code intelligence
+    # 代码智能
     find_symbols_tool,
     find_references_tool,
     get_ast_info_tool,
     code_review_tool,
-    # Visualization
+    # 可视化
     file_tree_tool,
     diff_viewer_tool,
-    # Testing
+    # 测试
     test_runner_tool,
 ]
 
 def _resolve_tool_profile(runtime: dict | None) -> str:
+    """从环境变量或 runtime 中解析工具集类型。"""
     configured = (
         os.environ.get("MINI_CODE_TOOL_PROFILE")
         or (runtime or {}).get("toolProfile")
@@ -75,12 +82,13 @@ def _resolve_tool_profile(runtime: dict | None) -> str:
 
 
 def _is_full_tool_profile(profile: str) -> bool:
+    """判断是否启用完整工具集。"""
     return profile in {"full", "utility", "utilities", "all"}
 
 
 def _load_utility_wrapper_tools():
-    # Lazy import keeps normal coding sessions from paying startup/import cost
-    # for rarely used wrappers and keeps the default model tool surface small.
+    """惰性加载工具集：避免日常 coding 场景为不常用工具支付导入开销，
+    同时保持默认暴露给模型的工具数量较少。"""
     from minicode.tools.archive_utils import (
         gzip_compress_tool, gzip_decompress_tool, tar_create_tool, tar_extract_tool,
         zip_create_tool, zip_extract_tool,
@@ -128,6 +136,11 @@ def _load_utility_wrapper_tools():
 
 
 def create_default_tool_registry(cwd: str, runtime: dict | None = None) -> ToolRegistry:
+    """根据 runtime 配置创建默认的 ToolRegistry。
+
+    会装载内置核心工具、按需的扩展工具集、MCP 工具
+    以及 ``load_skill`` 工具。
+    """
     skills = [asdict(skill) for skill in discover_skills(cwd)]
     mcp = create_mcp_backed_tools(cwd=cwd, mcp_servers=dict(runtime.get("mcpServers", {})) if runtime else {})
     profile = _resolve_tool_profile(runtime)

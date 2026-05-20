@@ -1,7 +1,7 @@
-"""Morandi color theme for MiniCode TUI.
+"""MiniCode TUI 的莫兰迪配色主题。
 
-A low-saturation palette inspired by the Rust version's ColorTheme.
-All colors are expressed as ANSI 256-color or 24-bit (RGB) escape codes.
+低饱和度的配色方案，灵感来自 Rust 版本的 ColorTheme。
+所有颜色都以 ANSI 256 或 24 位（RGB）转义码表示。
 """
 
 from __future__ import annotations

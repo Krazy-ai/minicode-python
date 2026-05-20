@@ -1,7 +1,7 @@
-"""Lightweight task tracking for multi-step agent execution.
+"""多步 agent 执行的轻量任务跟踪。
 
-Provides simple todo/task tracking that integrates with the agent loop
-to show progress during long multi-step operations.
+提供简单的 todo/task 跟踪能力，配合 agent 循环
+在长多步操作期间向用户展示进度。
 """
 
 from __future__ import annotations

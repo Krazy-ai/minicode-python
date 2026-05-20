@@ -1,15 +1,15 @@
-"""Persistent task graph for cross-step workflow management.
+"""跨步骤工作流管理用的持久化任务图。
 
-Inspired by Learn Claude Code best practices:
-- Distinguish between session-local planning and persistent task coordination
-- Separate task definition (what) from execution slot (who is running / progress)
-- Background task slot management with timed scheduling
-- Worktree execution isolation for risky operations
+借鉴 Learn Claude Code 的最佳实践：
+- 把会话内规划与跨会话的持久任务协调区分开
+- 把任务定义（做什么）和执行槽（谁在跑/进度）解耦
+- 带定时调度的后台任务槽管理
+- 高风险操作的 worktree 隔离
 
-Provides:
-- TaskGraph: DAG of tasks with dependencies
-- TaskSlot: Named execution slot with state tracking
-- WorktreeIsolator: Temporary worktree for risky operations
+提供：
+- TaskGraph：带依赖关系的任务 DAG
+- TaskSlot：带状态跟踪的命名执行槽
+- WorktreeIsolator：高风险操作的临时 worktree
 """
 
 from __future__ import annotations

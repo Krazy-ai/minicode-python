@@ -1,16 +1,16 @@
-"""Auto Mode for MiniCode Python.
+"""MiniCode 的 Auto 模式。
 
-Inspired by Claude Code's auto mode which sits between standard approval
-and --dangerously-skip-permissions. It includes:
-- Input-layer prompt injection detection
-- Output-layer transcription classifier
-- Safe operations auto-approve
-- High-risk operations blocked or guided to safe alternatives
+灵感来自 Claude Code 介于「逐项审批」和 ``--dangerously-skip-permissions`` 之间的 Auto 模式。
+它包含：
+- 输入层 prompt 注入检测
+- 输出层不安全操作分类
+- 安全操作自动放行
+- 高风险操作直接拦截或引导到安全替代
 
-Permission modes:
-- default: Ask for every action (current behavior)
-- auto: Auto-approve safe operations, prompt for risky ones
-- bypass: Skip all permissions (dangerous!)
+权限模式：
+- default：每个动作都询问（默认行为）
+- auto：安全操作自动放行，风险操作仍需确认
+- bypass：跳过所有权限检查（危险）
 """
 
 from __future__ import annotations
@@ -22,35 +22,35 @@ from typing import Any
 
 
 # ---------------------------------------------------------------------------
-# Permission modes
+# 权限模式
 # ---------------------------------------------------------------------------
 
 class PermissionMode(str, Enum):
-    """Permission modes (inspired by Claude Code)."""
-    DEFAULT = "default"           # Ask for everything
-    AUTO = "auto"                 # Auto-approve safe ops
-    BYPASS = "bypass"             # Skip all permissions (dangerous!)
-    PLAN = "plan"                 # Read-only, no execution
+    """权限模式（参考 Claude Code）。"""
+    DEFAULT = "default"           # 每个动作都询问
+    AUTO = "auto"                 # 安全操作自动放行
+    BYPASS = "bypass"             # 跳过所有权限检查（危险）
+    PLAN = "plan"                 # 只读，不允许执行
 
 
 # ---------------------------------------------------------------------------
-# Risk classification
+# 风险分类
 # ---------------------------------------------------------------------------
 
 class RiskLevel(str, Enum):
-    """Operation risk levels."""
-    SAFE = "safe"                 # Auto-approve
-    LOW = "low"                   # Auto-approve with logging
-    MEDIUM = "medium"             # Prompt with explanation
-    HIGH = "high"                 # Block or require strong justification
-    DANGEROUS = "dangerous"       # Always block
+    """操作风险等级。"""
+    SAFE = "safe"                 # 自动放行
+    LOW = "low"                   # 自动放行并记录
+    MEDIUM = "medium"             # 弹窗询问
+    HIGH = "high"                 # 拦截或要求强理由
+    DANGEROUS = "dangerous"       # 始终拦截
 
 
 # ---------------------------------------------------------------------------
-# Risk rules
+# 风险规则
 # ---------------------------------------------------------------------------
 
-# Safe tools (auto-approve in auto mode)
+# 安全工具（auto 模式自动放行）
 SAFE_TOOLS = {
     "read_file",
     "list_files",
@@ -58,12 +58,12 @@ SAFE_TOOLS = {
     "load_skill",
 }
 
-# Low-risk tools (auto-approve with logging)
+# 低风险工具（自动放行 + 记录）
 LOW_RISK_TOOLS = {
-    "run_command",  # Only for read-only commands
+    "run_command",  # 仅适用于只读类命令
 }
 
-# Medium-risk tools (require approval)
+# 中风险工具（需要审批）
 MEDIUM_RISK_TOOLS = {
     "write_file",
     "edit_file",
@@ -71,7 +71,7 @@ MEDIUM_RISK_TOOLS = {
     "modify_file",
 }
 
-# High-risk commands (block or require strong justification)
+# 高风险命令（拦截或要求强理由）
 HIGH_RISK_COMMANDS = {
     # Unix
     "rm -rf",
@@ -95,52 +95,52 @@ HIGH_RISK_COMMANDS = {
     "format",
 }
 
-# Dangerous patterns (always block)
+# 危险模式（始终拦截）
 DANGEROUS_PATTERNS = [
     # Unix
-    r"rm\s+-rf\s+/",           # Delete root
-    r"chmod\s+777",            # World-writable
-    r"curl.*\|\s*sh",          # Pipe curl to shell
+    r"rm\s+-rf\s+/",           # 删除根目录
+    r"chmod\s+777",            # 全员可写
+    r"curl.*\|\s*sh",          # curl | sh
     r"wget.*\|\s*sh",
-    r"mkfs",                   # Format filesystem
-    r"dd\s+if=",               # Disk dump
+    r"mkfs",                   # 格式化文件系统
+    r"dd\s+if=",               # 磁盘镜像
     # Windows
-    r"del\s+/[sfq].*[\\]",     # Recursive/force delete with path
-    r"rmdir\s+/s\s+/q",        # Silent recursive dir removal
+    r"del\s+/[sfq].*[\\]",     # 带路径的递归/强制删除
+    r"rmdir\s+/s\s+/q",        # 静默递归删除目录
     r"rd\s+/s\s+/q",
-    r"format\s+[a-zA-Z]:",     # Format drive
-    r"powershell.*\biex\b",    # PowerShell invoke-expression from remote
+    r"format\s+[a-zA-Z]:",     # 格式化分区
+    r"powershell.*\biex\b",    # PowerShell 远程 invoke-expression
     r"powershell.*Invoke-Expression", 
-    r"iwr.*\|\s*iex",          # Download and execute (PowerShell)
-    r"reg\s+delete\s+HKLM",   # Delete machine-wide registry keys
+    r"iwr.*\|\s*iex",          # PowerShell 下载并执行
+    r"reg\s+delete\s+HKLM",   # 删除全局注册表项
 ]
 
 
 @dataclass
 class RiskAssessment:
-    """Risk assessment result."""
+    """风险评估结果。"""
     level: RiskLevel
     tool_name: str
-    action: str  # "approve", "prompt", "block"
+    action: str  # "approve" / "prompt" / "block"
     reason: str
     safe_alternative: str | None = None
 
 
 # ---------------------------------------------------------------------------
-# Auto mode checker
+# Auto 模式判定器
 # ---------------------------------------------------------------------------
 
 class AutoModeChecker:
-    """Checks if operations can be auto-approved.
-    
-    Inspired by Claude Code's auto mode with input/output layer checks.
+    """判定操作是否可以自动放行。
+
+    参考 Claude Code Auto 模式的输入/输出层校验。
     """
     
     def __init__(self, mode: PermissionMode = PermissionMode.DEFAULT):
         self.mode = mode
     
     def set_mode(self, mode: PermissionMode) -> None:
-        """Change permission mode."""
+        """切换权限模式。"""
         self.mode = mode
     
     def assess_risk(
@@ -148,16 +148,16 @@ class AutoModeChecker:
         tool_name: str,
         tool_input: dict[str, Any],
     ) -> RiskAssessment:
-        """Assess risk of a tool operation.
-        
-        Args:
-            tool_name: Name of tool being called
-            tool_input: Tool input dictionary
-        
-        Returns:
-            RiskAssessment with action recommendation
+        """评估一次工具调用的风险。
+
+        参数：
+            tool_name: 待执行的工具名
+            tool_input: 工具输入参数 dict
+
+        返回：
+            含动作建议的 RiskAssessment。
         """
-        # Bypass mode - approve everything
+        # bypass 模式 —— 全部放行
         if self.mode == PermissionMode.BYPASS:
             return RiskAssessment(
                 level=RiskLevel.DANGEROUS,
@@ -166,7 +166,7 @@ class AutoModeChecker:
                 reason="Bypass mode: all permissions skipped",
             )
         
-        # Plan mode - read-only only
+        # plan 模式 —— 仅允许只读
         if self.mode == PermissionMode.PLAN:
             if tool_name in SAFE_TOOLS:
                 return RiskAssessment(
@@ -183,7 +183,7 @@ class AutoModeChecker:
                     reason="Plan mode: execution not allowed",
                 )
         
-        # Default mode - ask for everything
+        # default 模式 —— 全部询问
         if self.mode == PermissionMode.DEFAULT:
             return RiskAssessment(
                 level=RiskLevel.MEDIUM,
@@ -192,7 +192,7 @@ class AutoModeChecker:
                 reason="Default mode: approval required",
             )
         
-        # Auto mode - intelligent assessment
+        # auto 模式 —— 智能评估
         return self._assess_auto_mode(tool_name, tool_input)
     
     def _assess_auto_mode(
@@ -200,8 +200,8 @@ class AutoModeChecker:
         tool_name: str,
         tool_input: dict[str, Any],
     ) -> RiskAssessment:
-        """Assess risk in auto mode."""
-        # Safe tools - auto-approve
+        """auto 模式下的风险评估。"""
+        # 安全工具自动放行
         if tool_name in SAFE_TOOLS:
             return RiskAssessment(
                 level=RiskLevel.SAFE,
@@ -210,15 +210,15 @@ class AutoModeChecker:
                 reason=f"Auto mode: {tool_name} is read-only",
             )
         
-        # Check run_command for read-only commands
+        # run_command：检查是否为只读命令
         if tool_name == "run_command":
             return self._assess_command(tool_input)
         
-        # File modification tools
+        # 文件修改类工具
         if tool_name in MEDIUM_RISK_TOOLS:
             return self._assess_file_edit(tool_name, tool_input)
         
-        # Unknown tool - prompt
+        # 未知工具 —— 询问
         return RiskAssessment(
             level=RiskLevel.MEDIUM,
             tool_name=tool_name,
@@ -227,12 +227,12 @@ class AutoModeChecker:
         )
     
     def _assess_command(self, tool_input: dict[str, Any]) -> RiskAssessment:
-        """Assess risk of run_command."""
+        """评估 run_command 的风险。"""
         command = tool_input.get("command", "")
         if isinstance(command, list):
             command = " ".join(command)
         
-        # Check dangerous patterns
+        # 命中危险模式直接拦截
         for pattern in DANGEROUS_PATTERNS:
             if re.search(pattern, command, re.IGNORECASE):
                 return RiskAssessment(
@@ -242,7 +242,7 @@ class AutoModeChecker:
                     reason=f"Dangerous pattern detected: {pattern}",
                 )
         
-        # Check high-risk commands
+        # 命中高风险命令则询问
         for risky_cmd in HIGH_RISK_COMMANDS:
             if risky_cmd in command:
                 return RiskAssessment(
@@ -253,7 +253,7 @@ class AutoModeChecker:
                     safe_alternative=f"Consider safer alternative to '{risky_cmd}'",
                 )
         
-        # Low-risk - auto-approve with logging
+        # 低风险 —— 自动放行 + 记录
         return RiskAssessment(
             level=RiskLevel.LOW,
             tool_name="run_command",
@@ -266,11 +266,11 @@ class AutoModeChecker:
         tool_name: str,
         tool_input: dict[str, Any],
     ) -> RiskAssessment:
-        """Assess risk of file editing tools."""
+        """评估文件编辑类工具的风险。"""
         path = tool_input.get("path", "")
         
-        # Check if editing sensitive files
-        # Use [/\\] to match both Unix / and Windows \ separators
+        # 是否在编辑敏感文件
+        # 用 [/\\] 同时兼容 Unix / 与 Windows \
         sensitive_patterns = [
             r"\.env",
             r"\.git[/\\]",
@@ -288,7 +288,7 @@ class AutoModeChecker:
                     reason=f"Modifying sensitive file: {path}",
                 )
         
-        # Normal file edit - prompt
+        # 普通文件编辑 —— 询问
         return RiskAssessment(
             level=RiskLevel.MEDIUM,
             tool_name=tool_name,
@@ -297,14 +297,14 @@ class AutoModeChecker:
         )
     
     # -----------------------------------------------------------------------
-    # Input/Output layer checks (inspired by Claude Code)
+    # 输入/输出层校验（参考 Claude Code）
     # -----------------------------------------------------------------------
     
     @staticmethod
     def detect_prompt_injection(user_input: str) -> tuple[bool, str]:
-        """Detect potential prompt injection in user input.
-        
-        Returns:
+        """检测用户输入中潜在的 prompt 注入攻击。
+
+        返回：
             (is_injection, reason)
         """
         injection_patterns = [
@@ -324,9 +324,9 @@ class AutoModeChecker:
     
     @staticmethod
     def classify_output_safety(output: str) -> tuple[bool, str]:
-        """Classify if AI output contains unsafe operations.
-        
-        Returns:
+        """判断 AI 输出是否包含不安全操作。
+
+        返回：
             (is_unsafe, reason)
         """
         unsafe_patterns = [
@@ -352,12 +352,12 @@ class AutoModeChecker:
 
 
 # ---------------------------------------------------------------------------
-# Mode management
+# 模式管理
 # ---------------------------------------------------------------------------
 
 @dataclass
 class ModeState:
-    """Current permission mode state."""
+    """当前权限模式状态。"""
     mode: PermissionMode = PermissionMode.DEFAULT
     mode_changed_at: float = 0.0
     mode_changed_by: str = "user"
@@ -366,7 +366,7 @@ class ModeState:
     block_count: int = 0
     
     def record_decision(self, action: str) -> None:
-        """Record a permission decision."""
+        """记录一次权限决策。"""
         import time
         if action == "approve":
             self.auto_approve_count += 1
@@ -376,7 +376,7 @@ class ModeState:
             self.block_count += 1
     
     def format_status(self) -> str:
-        """Format mode status."""
+        """格式化模式状态。"""
         mode_descriptions = {
             PermissionMode.DEFAULT: "Ask for every action",
             PermissionMode.AUTO: "Auto-approve safe operations",
@@ -405,7 +405,7 @@ class ModeState:
 
 
 # ---------------------------------------------------------------------------
-# Module-level singleton
+# 模块级单例
 # ---------------------------------------------------------------------------
 
 _checker = AutoModeChecker()
@@ -413,17 +413,17 @@ _mode_state = ModeState()
 
 
 def get_checker() -> AutoModeChecker:
-    """Get global auto mode checker."""
+    """获取全局 AutoModeChecker。"""
     return _checker
 
 
 def get_mode_state() -> ModeState:
-    """Get global mode state."""
+    """获取全局模式状态。"""
     return _mode_state
 
 
 def set_permission_mode(mode: PermissionMode) -> str:
-    """Set global permission mode."""
+    """设置全局权限模式。"""
     import time
     _checker.set_mode(mode)
     _mode_state.mode = mode
