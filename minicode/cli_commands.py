@@ -64,6 +64,11 @@ SLASH_COMMANDS = [
     SlashCommand("/edit", "/edit <path>::<search>::<replace>", "Edit a file by exact replacement."),
     SlashCommand("/patch", "/patch <path>::<search1>::<replace1>::<search2>::<replace2>...", "Apply multiple replacements to one file in one command."),
     SlashCommand("/cmd", "/cmd [cwd::]<command> [args...]", "Run an allowed development command directly."),
+    # RAG 知识库命令 (M4)
+    SlashCommand("/ingest", "/ingest <path>", "Ingest a file or directory into the knowledge base."),
+    SlashCommand("/ask", "/ask <query>", "Query the knowledge base and return relevant context."),
+    SlashCommand("/forget", "/forget", "Clear the entire knowledge base."),
+    SlashCommand("/knowledge-stats", "/knowledge-stats", "Show knowledge base statistics."),
 ]
 
 
@@ -111,6 +116,12 @@ def format_slash_commands() -> str:
             ("/retry", "Retry the last prompt"),
             ("/permissions", "Show permission storage path"),
             ("/config-paths", "Show settings file paths"),
+        ],
+        "📚 Knowledge Base (RAG)": [
+            ("/ingest <path>", "Ingest file or directory"),
+            ("/ask <query>", "Query knowledge base"),
+            ("/forget", "Clear knowledge base"),
+            ("/knowledge-stats", "Show knowledge base stats"),
         ],
     }
     
@@ -294,5 +305,84 @@ def try_handle_local_command(user_input: str, tools=None, cwd: str | None = None
         from minicode.prompt.user_profile import handle_user_command
         args = user_input[len("/user"):].strip()
         return handle_user_command(args)
+
+    # ------------------------------------------------------------------
+    # RAG 知识库命令 (M4)
+    # ------------------------------------------------------------------
+
+    if user_input.startswith("/ingest "):
+        path_arg = user_input[len("/ingest "):].strip()
+        if not path_arg:
+            return "Usage: /ingest <path>"
+
+        from pathlib import Path
+        target = Path(path_arg)
+        if not target.is_absolute() and cwd:
+            target = Path(cwd) / target
+        target = target.resolve()
+
+        if not target.exists():
+            return f"Error: Path not found: {target}"
+
+        try:
+            from minicode.knowledge.pipeline import create_pipeline
+            pipeline = create_pipeline(cwd or ".")
+
+            if target.is_file():
+                report = pipeline.ingest_file(target)
+                return f"✅ Ingested {target.name}: {report.chunks_created} chunks created"
+            else:
+                report = pipeline.ingest_directory(target)
+                return f"✅ Ingested directory {target}: {report.chunks_created} chunks created, {report.chunks_failed} failed"
+
+        except Exception as e:
+            return f"❌ Ingest failed: {e}"
+
+    if user_input.startswith("/ask "):
+        query = user_input[len("/ask "):].strip()
+        if not query:
+            return "Usage: /ask <query>"
+
+        try:
+            from minicode.knowledge.pipeline import create_pipeline
+            pipeline = create_pipeline(cwd or ".")
+            results = pipeline.retrieve(query, top_k=5)
+
+            if not results:
+                return f"No relevant knowledge found for: {query}"
+
+            lines = [f"🔍 Query: {query}\n", "📚 Retrieved knowledge:\n"]
+            for i, r in enumerate(results, 1):
+                chunk = r.chunk
+                lines.append(f"{i}. [{chunk.source}] (score={r.score:.3f})")
+                lines.append(f"   {chunk.text[:200]}{'...' if len(chunk.text) > 200 else ''}")
+                lines.append("")
+
+            return "\n".join(lines)
+
+        except Exception as e:
+            return f"❌ Query failed: {e}"
+
+    if user_input == "/forget":
+        try:
+            from minicode.knowledge.pipeline import create_pipeline
+            pipeline = create_pipeline(cwd or ".")
+            pipeline.clear()
+            return "✅ Knowledge base cleared"
+        except Exception as e:
+            return f"❌ Clear failed: {e}"
+
+    if user_input == "/knowledge-stats":
+        try:
+            from minicode.knowledge.pipeline import create_pipeline
+            pipeline = create_pipeline(cwd or ".")
+            stats = pipeline.get_stats()
+            lines = ["📊 Knowledge Base Statistics\n"]
+            lines.append(f"  Total chunks: {stats.get('total_chunks', 0)}")
+            lines.append(f"  Total documents: {stats.get('total_docs', 0)}")
+            lines.append(f"  Index size: {stats.get('index_size_mb', 0):.2f} MB")
+            return "\n".join(lines)
+        except Exception as e:
+            return f"❌ Stats failed: {e}"
 
     return None

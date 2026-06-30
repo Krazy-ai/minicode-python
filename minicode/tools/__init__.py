@@ -31,6 +31,7 @@ from minicode.tools.web_fetch import web_fetch_tool
 from minicode.tools.web_search import web_search_tool
 from minicode.tools.write_file import write_file_tool
 from minicode.tools.task import task_tool
+from minicode.tools.retrieve_knowledge import retrieve_knowledge_tool
 
 
 _CORE_TOOLS = [
@@ -69,6 +70,8 @@ _CORE_TOOLS = [
     diff_viewer_tool,
     # 测试
     test_runner_tool,
+    # 知识库检索 (RAG)
+    retrieve_knowledge_tool,
 ]
 
 def _resolve_tool_profile(runtime: dict | None) -> str:

@@ -227,6 +227,35 @@ def build_system_prompt(
 
         pipeline.register_dynamic("mcp", _build_mcp, cache_ttl=60.0)
 
+    # 知识库 (RAG) 状态检测与使用说明
+    def _build_knowledge_context():
+        """构建知识库使用说明（动态检测）。"""
+        try:
+            from minicode.knowledge.pipeline import create_pipeline
+            pipeline = create_pipeline(str(cwd_path))
+            stats = pipeline.get_stats()
+            if stats.get("total_chunks", 0) > 0:
+                lines = [
+                    "## Knowledge Base (RAG)",
+                    "",
+                    f"Knowledge base is available with {stats.get('total_chunks', 0)} chunks.",
+                    "Use the `retrieve_knowledge_tool` to search for relevant project documentation,",
+                    "design docs, API references, and historical decisions.",
+                    "",
+                    "When to use:",
+                    "- User asks about project architecture or design decisions",
+                    "- User asks about API usage or code examples",
+                    "- User asks about historical context or rationale",
+                    "- You need to understand project-specific conventions",
+                    "",
+                ]
+                return "\n".join(lines)
+        except Exception:
+            pass
+        return None
+
+    pipeline.register_dynamic("knowledge", _build_knowledge_context, cache_ttl=30.0)
+
     memory_context = str(extras.get("memory_context") or "").strip()
     if memory_context:
         pipeline.register_dynamic(
