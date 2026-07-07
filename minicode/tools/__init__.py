@@ -19,6 +19,9 @@ from minicode.tools.edit_file import edit_file_tool
 from minicode.tools.file_tree import file_tree_tool
 from minicode.tools.git import git_tool
 from minicode.tools.grep_files import grep_files_tool
+from minicode.tools.knowledge_ingest import knowledge_ingest_tool
+from minicode.tools.knowledge_query import knowledge_query_tool
+from minicode.tools.knowledge_status import knowledge_status_tool
 from minicode.tools.list_files import list_files_tool
 from minicode.tools.load_skill import create_load_skill_tool
 from minicode.tools.modify_file import modify_file_tool
@@ -64,6 +67,10 @@ _CORE_TOOLS = [
     find_references_tool,
     get_ast_info_tool,
     code_review_tool,
+    # 知识库（RAG）
+    knowledge_ingest_tool,
+    knowledge_query_tool,
+    knowledge_status_tool,
     # 可视化
     file_tree_tool,
     diff_viewer_tool,

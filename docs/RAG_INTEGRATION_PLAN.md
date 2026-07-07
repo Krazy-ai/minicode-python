@@ -435,28 +435,33 @@ pip install -e ".[rag-vector]"
 
 | # | Milestone | TODO | 状态 |
 |---|-----------|------|------|
-| 1 | M1 | 子包骨架 + types | pending |
-| 2 | M1 | parsers | pending |
-| 3 | M1 | chunker | pending |
-| 4 | M1 | BM25 抽取共享 | pending |
-| 5 | M1 | SQLite store | pending |
-| 6 | M1 | pipeline 入口 | pending |
-| 7 | M1 | M1 验收 | pending |
-| 8 | M2 | 增量索引 cache | pending |
-| 9 | M2 | 查询改写 | pending |
-| 10 | M2 | Rerank | pending |
-| 11 | M2 | M2 验收 | pending |
-| 12 | M3 | 向量后端 vector.py | pending |
-| 13 | M3 | sqlite-vec 存储 | pending |
-| 14 | M3 | Hybrid 融合 | pending |
-| 15 | M3 | M3 验收 | pending |
-| 16 | M4 | agent 工具 | pending |
-| 17 | M4 | /ask 命令 | pending |
-| 18 | M4 | 系统提示集成 | pending |
-| 19 | M5 | 评测框架 | pending |
-| 20 | M5 | 测试套件 | pending |
-| 21 | M5 | 文档 | pending |
-| 22 | M5 | 全局验收 | pending |
+| 1 | M1 | 子包骨架 + types | ✅ done |
+| 2 | M1 | parsers | ✅ done |
+| 3 | M1 | chunker | ✅ done |
+| 4 | M1 | BM25 抽取共享 | ✅ done |
+| 5 | M1 | SQLite store | ✅ done |
+| 6 | M1 | pipeline 入口 | ✅ done |
+| 7 | M1 | M1 验收 | ✅ done |
+| 8 | M2 | 增量索引 cache | ✅ done |
+| 9 | M2 | 查询改写 | ✅ done |
+| 10 | M2 | Rerank | ✅ done |
+| 11 | M2 | M2 验收 | ✅ done |
+| 12 | M3 | 向量后端 vector.py | ✅ done |
+| 13 | M3 | sqlite-vec 存储 | ✅ done |
+| 14 | M3 | Hybrid 融合 | ✅ done |
+| 15 | M3 | M3 验收 | ✅ done |
+| 16 | M4 | agent 工具 | ✅ done |
+| 17 | M4 | /ask 命令 | ✅ done |
+| 18 | M4 | 系统提示集成 | ✅ done |
+| 19 | M5 | 评测框架 | ✅ done |
+| 20 | M5 | 测试套件 | ✅ done |
+| 21 | M5 | 文档 | ✅ done |
+| 22 | M5 | 全局验收 | ✅ done |
+
+> **实现完成情况（实测）**：全量 `pytest -q` → **371 passed**（基线 313 + 新增 58），
+> pre-existing 的 9 failed / 11 errors 计数保持不变（零回归）。BM25 定义仅剩
+> `knowledge/bm25.py` 一处。4 个 console entry 均可 import。未装 sqlite-vec
+> 时全部功能走 BM25 降级路径正常。eval CLI 输出 MRR/Hit@K/Recall@K 正常。
 
 ---
 

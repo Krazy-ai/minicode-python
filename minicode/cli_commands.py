@@ -42,6 +42,8 @@ SLASH_COMMANDS = [
     SlashCommand("/context", "/context", "Show context window usage."),
     SlashCommand("/tasks", "/tasks", "Show current task list."),
     SlashCommand("/memory", "/memory", "Show memory system status."),
+    SlashCommand("/ask", "/ask <question>", "Ask the knowledge base a question (RAG, does not run tools)."),
+    SlashCommand("/knowledge", "/knowledge", "Show knowledge base indexes and status."),
     SlashCommand("/config", "/config", "Show configuration diagnostics and validation."),
     SlashCommand("/history", "/history", "Show recent prompt history from ~/.mini-code/history.json."),
     SlashCommand("/clear", "/clear", "Clear the current transcript view."),
@@ -295,4 +297,126 @@ def try_handle_local_command(user_input: str, tools=None, cwd: str | None = None
         args = user_input[len("/user"):].strip()
         return handle_user_command(args)
 
+    if user_input == "/knowledge" or user_input.startswith("/knowledge "):
+        return _handle_knowledge_command(user_input, cwd=cwd)
+
+    if user_input == "/ask" or user_input.startswith("/ask "):
+        question = user_input[len("/ask"):].strip()
+        return handle_ask_command(question, cwd=cwd)
+
     return None
+
+
+def _handle_knowledge_command(user_input: str, cwd: str | None = None) -> str:
+    """展示知识库索引清单与默认索引状态。"""
+    try:
+        from pathlib import Path
+
+        from minicode.knowledge import pipeline
+
+        base_cwd = cwd or str(Path.cwd())
+        indexes = pipeline.list_indexes(base_cwd)
+        if not indexes:
+            return (
+                "No knowledge base indexes found.\n"
+                "Build one with the knowledge_ingest tool, e.g. ask me to "
+                "\"index the ./docs directory\"."
+            )
+        lines = ["Knowledge base indexes:"]
+        for i in indexes:
+            info = pipeline.status(i["name"], scope=i["scope"], cwd=base_cwd)
+            lines.append(
+                f"  - {i['name']} (scope={i['scope']}): "
+                f"{info.get('documents', 0)} docs, {info.get('chunks', 0)} chunks"
+            )
+        lines.append("")
+        lines.append("Use /ask <question> to query, or the knowledge_query tool.")
+        return "\n".join(lines)
+    except Exception as e:  # noqa: BLE001
+        return f"Error reading knowledge base: {e}"
+
+
+def handle_ask_command(question: str, cwd: str | None = None) -> str:
+    """处理 ``/ask <question>``：检索知识库并（若可用）让模型基于检索结果作答。
+
+    流程：
+        1. ``pipeline.query`` 拿到最相关 chunks
+        2. 拼装 ``<context>...</context>`` prompt
+        3. 透传给当前 model adapter 一次性生成（不走 agent loop、不调工具）
+        4. 输出答案 + 折叠的引用清单
+
+    模型不可用（离线/未配置）时优雅降级：直接返回检索到的片段与引用。
+    """
+    from pathlib import Path
+
+    from minicode.knowledge import pipeline
+
+    question = (question or "").strip()
+    if not question:
+        return "Usage: /ask <question>"
+
+    base_cwd = cwd or str(Path.cwd())
+
+    if not pipeline.has_any_index(base_cwd):
+        return (
+            "No knowledge base index found. Build one first with the "
+            "knowledge_ingest tool (e.g. ask me to index the ./docs directory)."
+        )
+
+    result = pipeline.query(question, top_k=5, cwd=base_cwd)
+    if not result:
+        return f"No relevant information found in the knowledge base for: {question}"
+
+    citations = result.citations()
+    citation_block = "\n".join(
+        f"  [{i}] {c.format_ref()}" for i, c in enumerate(citations, start=1)
+    )
+
+    context_text = result.format_context()
+    answer = _try_model_answer(question, context_text, base_cwd)
+
+    if answer is None:
+        # 降级：直接返回检索内容
+        return (
+            f"Q: {question}\n\n"
+            f"(model unavailable — showing retrieved context)\n\n"
+            f"{context_text}\n\n"
+            f"Sources:\n{citation_block}"
+        )
+
+    return f"{answer}\n\nSources:\n{citation_block}"
+
+
+def _try_model_answer(question: str, context_text: str, cwd: str) -> str | None:
+    """尝试用当前模型基于检索上下文作答；失败返回 None（触发降级）。"""
+    try:
+        from minicode.model.model_registry import create_model_adapter
+
+        runtime = load_runtime_config(cwd)
+        adapter = create_model_adapter(runtime["model"], tools=None, runtime=runtime)
+
+        system_prompt = (
+            "You are a helpful assistant answering questions strictly based on the "
+            "provided knowledge base context. If the context does not contain the "
+            "answer, say so honestly. Cite the numbered sources like [1], [2] when "
+            "relevant. Do not use tools."
+        )
+        user_prompt = (
+            f"<context>\n{context_text}\n</context>\n\n"
+            f"Answer this question based only on the context above:\n{question}"
+        )
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+        step = adapter.next(messages)
+        content = getattr(step, "content", None)
+        if not content or not str(content).strip():
+            return None
+        text = str(content).strip()
+        # 去掉可能的 <progress>/<final> 协议前缀
+        for marker in ("<final>", "</final>", "<progress>", "</progress>"):
+            text = text.replace(marker, "")
+        return text.strip()
+    except Exception:  # noqa: BLE001 - 离线/未配置模型时降级
+        return None

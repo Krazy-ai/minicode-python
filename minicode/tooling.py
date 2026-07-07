@@ -291,6 +291,7 @@ _READ_ONLY_TOOL_NAMES: frozenset[str] = frozenset({
     "code_review", "diff_viewer", "db_explorer",
     "web_fetch", "web_search", "api_tester",
     "ask_user", "todo_write",
+    "knowledge_query", "knowledge_status",
 })
 
 

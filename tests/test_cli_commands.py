@@ -52,3 +52,57 @@ def test_memory_command_uses_current_workspace(tmp_path) -> None:
 
     assert result is not None
     assert "Memory System Status" in result
+
+
+def test_ask_without_index_reports_missing(tmp_path) -> None:
+    result = try_handle_local_command("/ask what is auth", cwd=str(tmp_path))
+    assert result is not None
+    assert "No knowledge base index" in result
+
+
+def test_ask_empty_question_shows_usage(tmp_path) -> None:
+    result = try_handle_local_command("/ask", cwd=str(tmp_path))
+    assert result is not None
+    assert "Usage: /ask" in result
+
+
+def test_ask_returns_context_when_model_unavailable(tmp_path, monkeypatch) -> None:
+    # 建一个索引
+    from minicode.knowledge.pipeline import ingest
+
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "auth.md").write_text(
+        "# Authentication\n\nLogin uses OAuth tokens to verify credentials.\n",
+        encoding="utf-8",
+    )
+    ingest(docs, index_name="default", scope="project", cwd=str(tmp_path))
+
+    # 强制模型不可用 → 降级返回检索内容
+    import minicode.cli_commands as cli
+
+    monkeypatch.setattr(cli, "_try_model_answer", lambda q, c, cwd: None)
+    result = try_handle_local_command("/ask how does login work", cwd=str(tmp_path))
+    assert result is not None
+    assert "Sources:" in result
+    assert "auth.md" in result
+
+
+def test_knowledge_command_lists_indexes(tmp_path) -> None:
+    from minicode.knowledge.pipeline import ingest
+
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "a.md").write_text("# A\n\nalpha content here", encoding="utf-8")
+    ingest(docs, index_name="default", scope="project", cwd=str(tmp_path))
+
+    result = try_handle_local_command("/knowledge", cwd=str(tmp_path))
+    assert result is not None
+    assert "Knowledge base indexes" in result
+    assert "default" in result
+
+
+def test_knowledge_command_empty(tmp_path) -> None:
+    result = try_handle_local_command("/knowledge", cwd=str(tmp_path))
+    assert result is not None
+    assert "No knowledge base indexes" in result

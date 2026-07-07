@@ -1,0 +1,7 @@
+Project notes and miscellaneous reminders.
+
+The deployment pipeline runs on every push to the main branch. Continuous
+integration executes the full pytest suite before any release is cut.
+
+Remember to update the changelog before tagging a new version. The changelog
+follows the Keep a Changelog format.

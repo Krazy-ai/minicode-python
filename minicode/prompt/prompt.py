@@ -227,6 +227,25 @@ def build_system_prompt(
 
         pipeline.register_dynamic("mcp", _build_mcp, cache_ttl=60.0)
 
+    # Knowledge base (RAG) hint: only when an index actually exists in this workspace.
+    try:
+        from minicode.knowledge import pipeline as _kb_pipeline
+
+        if _kb_pipeline.has_any_index(cwd):
+            pipeline.register_dynamic(
+                "knowledge_base",
+                lambda: (
+                    "This workspace has a knowledge base. When the user asks about "
+                    "project documentation, design decisions, or unfamiliar code, "
+                    "prefer using the knowledge_query tool before reading files "
+                    "manually. Use knowledge_status to inspect available indexes and "
+                    "knowledge_ingest to (re)build them."
+                ),
+                cache_ttl=60.0,
+            )
+    except Exception:  # noqa: BLE001 - knowledge subsystem must never break prompt build
+        pass
+
     memory_context = str(extras.get("memory_context") or "").strip()
     if memory_context:
         pipeline.register_dynamic(

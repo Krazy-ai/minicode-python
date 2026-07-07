@@ -13,6 +13,13 @@ dependencies = []
 [project.optional-dependencies]
 dev = ["pytest>=8.0.0"]
 
+# 可选的 RAG 向量增强：安装后 knowledge 子系统支持 hybrid（BM25 + 向量）检索。
+# 默认不安装，纯 BM25 零依赖即可工作。embedding 通过 OpenAI/voyage API 计算，
+# 不在本地下载模型。
+rag-vector = [
+    "sqlite-vec>=0.1.0",
+]
+
 [project.scripts]
 minicode-py = "minicode.main:main"
 minicode-gateway = "minicode.gateway:run_gateway"
